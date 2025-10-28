@@ -10,8 +10,10 @@ import {
   Group,
   Stack,
   Button,
-  Badge // Added Badge
+  Badge, // Added Badge
+  Center // ---- START FIX: Import Center ----
 } from "@mantine/core";
+// ---- END FIX ----
 import { IconPencil, IconTrash, IconInputAi, IconOutlet, IconPlayerPlay } from "@tabler/icons-react";
 import { SerializedPrepRecipe, ApiResponse, StorageLocation } from "@/lib/types"; // Added StorageLocation
 import { notifications } from '@mantine/notifications';
