@@ -1,158 +1,125 @@
 // PATH: app/dashboard/floorplan/components/CreateVenueObjectModal.tsx
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  Modal,
-  TextInput,
-  Button,
-  NumberInput,
-  Stack,
-  LoadingOverlay,
-  Select,
-  Switch,
-  Text, // Ensure Text is imported
-} from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { Modal, Button, TextInput, Select, Group, NumberInput } from "@mantine/core";
+import { useForm, zodResolver } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { ApiResponse } from "@/lib/types";
+import { z } from "zod";
 import { VenueObject, VenueObjectType, Workstation } from "@prisma/client";
-// Removed unused Decimal import
+import { ApiResponse } from "@/lib/types";
+import { useEffect, useState } from "react";
+import { useQuery }s from "@tanstack/react-query";
 
-interface CreateVenueObjectModalProps {
+// Zod schema for the object
+const schema = z.object({
+  name: z.string().min(1, "Nome é obrigatório"),
+  type: z.nativeEnum(VenueObjectType),
+  workstationId: z.string().nullable().optional(),
+  width: z.number().min(10),
+  height: z.number().min(10),
+  rotation: z.number(),
+});
+
+type Props = {
   opened: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (object: VenueObject & { workstation: Workstation | null }) => void;
   floorPlanId: string;
-  workstations: Workstation[]; // Pass workstations for the 'WORKSTATION' type
-}
+  // Pass initial data for creation (from drop) or editing
+  initialData?: Partial<VenueObject>; 
+};
 
-// Data for the Select component
-const objectTypeData = Object.values(VenueObjectType).map(value => ({
-    value,
-    label: value.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-}));
-
-
-// Array of storage types
-const storageTypes: VenueObjectType[] = [
-    VenueObjectType.STORAGE,
-    VenueObjectType.FREEZER,
-    VenueObjectType.SHELF,
-    VenueObjectType.WORKSTATION_STORAGE
-];
+// Fetch workstations to link
+const fetchWorkstations = async (): Promise<Workstation[]> => {
+  const res = await fetch("/api/workstations");
+  const data: ApiResponse<Workstation[]> = await res.json();
+  if (!data.success || !data.data) throw new Error("Failed to fetch workstations");
+  return data.data;
+};
 
 export function CreateVenueObjectModal({
   opened,
   onClose,
   onSuccess,
   floorPlanId,
-  workstations,
-}: CreateVenueObjectModalProps) {
+  initialData,
+}: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch workstation data for the dropdown
+  const { data: workstations, isLoading: isLoadingWorkstations } = useQuery({
+    queryKey: ["workstations"],
+    queryFn: fetchWorkstations,
+  });
 
   const form = useForm({
     initialValues: {
       name: "",
-      type: VenueObjectType.TABLE as VenueObjectType, // Assert broader type initially
-      workstationId: null as string | null,
-      capacity: 2 as number | '',
-      isReservable: false,
-      reservationCost: 0 as number | '',
+      type: VenueObjectType.OTHER,
+      workstationId: null,
+      width: 100,
+      height: 100,
+      rotation: 0,
     },
-    validate: {
-      name: (value) => (value.trim().length > 0 ? null : "Nome é obrigatório"),
-      type: (value) => (value ? null : "Tipo é obrigatório"),
-      // FIX 1: Explicitly cast type for comparison
-      workstationId: (value, values) =>
-        (values.type as VenueObjectType) === VenueObjectType.WORKSTATION && !value
-          ? "Estação é obrigatória para este tipo"
-          : null,
-      // ---- START FIX for build error ----
-      capacity: (val, values) => {
-           const currentType = values.type as VenueObjectType; // Get the type
-           // Check if the type is NOT TABLE and NOT BAR_SEAT
-           if (currentType !== VenueObjectType.TABLE && currentType !== VenueObjectType.BAR_SEAT) {
-               return null; // Capacity validation doesn't apply
-           }
-           // Existing validation logic for TABLE or BAR_SEAT
-           if (val === null || val === '') return "Capacidade é obrigatória para este tipo";
-           const num = Number(val);
-           return isNaN(num) || num < 1 ? "Capacidade deve ser 1 ou maior" : null;
-      },
-      // ---- END FIX for build error ----
-      reservationCost: (val, values) => {
-           // FIX: Cast values.type here
-           if ((values.type as VenueObjectType) !== VenueObjectType.TABLE || !values.isReservable) return null;
-           if (val === null || val === '') return "Custo é obrigatório para reserva";
-           const num = Number(val);
-           return isNaN(num) || num < 0 ? "Custo deve ser um número positivo ou zero" : null;
-      },
-    },
+    validate: zodResolver(schema),
   });
 
-  // Reset form when modal closes
+  // When modal opens or initialData changes, populate the form
   useEffect(() => {
-    if (!opened) {
+    if (initialData) {
+      form.setValues({
+        name: initialData.name || "",
+        type: initialData.type || VenueObjectType.TABLE,
+        workstationId: initialData.workstationId || null,
+        width: initialData.width || 100,
+        height: initialData.height || 100,
+        rotation: initialData.rotation || 0,
+      });
+    } else {
       form.reset();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened]);
-
-
-  // Get workstation data for the Select
-  const workstationSelectData = workstations.map((w) => ({
-    value: w.id,
-    label: w.name,
-  }));
-
-  // Get current form values
-  const formValues = form.values;
+  }, [initialData, opened]);
 
   const handleSubmit = async (values: typeof form.values) => {
     setIsSubmitting(true);
-    try {
-        const currentType = values.type as VenueObjectType; // Cast for checks
-        const payload = {
-            name: values.name,
-            floorPlanId: floorPlanId,
-            type: currentType,
-            anchorX: 0,
-            anchorY: 0,
-            // Check type directly for capacity inclusion
-            capacity: (currentType === VenueObjectType.TABLE || currentType === VenueObjectType.BAR_SEAT) && values.capacity !== '' ? Number(values.capacity) : null,
-            isReservable: currentType === VenueObjectType.TABLE ? values.isReservable : false,
-            reservationCost: (currentType === VenueObjectType.TABLE && values.isReservable && values.reservationCost !== '') ? Number(values.reservationCost).toString() : null,
-            workstationId: currentType === VenueObjectType.WORKSTATION ? values.workstationId : null,
-        };
+    const isEditing = !!initialData?.id;
+    
+    const url = isEditing
+      ? `/api/venue-objects/${initialData.id}`
+      : "/api/venue-objects";
+      
+    const method = isEditing ? "PUT" : "POST";
 
-      const response = await fetch("/api/venue-objects", {
-        method: "POST",
+    const payload = {
+      ...initialData,
+      ...values,
+      floorPlanId: floorPlanId,
+    };
+
+    try {
+      const res = await fetch(url, {
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data: ApiResponse<VenueObject> = await response.json();
+      const data: ApiResponse<VenueObject & { workstation: Workstation | null }> =
+        await res.json();
 
-      if (response.ok && data.success) {
+      if (data.success && data.data) {
         notifications.show({
           title: "Sucesso",
-          message: "Objeto criado com sucesso!",
+          message: `Objeto ${isEditing ? "atualizado" : "criado"} com sucesso!`,
           color: "green",
         });
-        onSuccess();
+        onSuccess(data.data);
       } else {
-        notifications.show({
-          title: "Erro",
-          message: data.error || "Falha ao criar objeto",
-          color: "red",
-        });
+        throw new Error(data.error || "Falha ao salvar objeto");
       }
     } catch (error) {
-      console.error("Submit error:", error);
       notifications.show({
         title: "Erro",
-        message: "Ocorreu um erro inesperado",
+        message: error instanceof Error ? error.message : "Erro desconhecido",
         color: "red",
       });
     } finally {
@@ -160,116 +127,49 @@ export function CreateVenueObjectModal({
     }
   };
 
-  const handleClose = () => {
-    onClose();
-  };
-
-  // FIX 2: Explicitly cast type for includes check
-  const isStorageType = storageTypes.includes(formValues.type as VenueObjectType);
-  // END FIX 2
-
   return (
-    <Modal opened={opened} onClose={handleClose} title="Novo Objeto na Planta">
-      <LoadingOverlay visible={isSubmitting} />
+    <Modal opened={opened} onClose={onClose} title={initialData?.id ? "Editar Objeto" : "Criar Novo Objeto"}>
       <form onSubmit={form.onSubmit(handleSubmit)}>
-        <Stack>
-          <TextInput
-            required
-            label="Nome / Identificador"
-            placeholder="Ex: Mesa 12, Bar 01, Freezer Cozinha"
-            {...form.getInputProps("name")}
-          />
-          <Select
-            required
-            label="Tipo de Objeto"
-            data={objectTypeData}
-            {...form.getInputProps("type")}
-            // FIX 3: Ensure value passed is string and handle potential null
-            onChange={(value) => {
-                 const selectedType = value as VenueObjectType | null;
-                 form.setFieldValue('type', selectedType ?? VenueObjectType.TABLE);
-                 if (selectedType !== VenueObjectType.WORKSTATION) {
-                     form.setFieldValue('workstationId', null);
-                 }
-                 // Check type directly
-                 if (!selectedType || (selectedType !== VenueObjectType.TABLE && selectedType !== VenueObjectType.BAR_SEAT)) {
-                     form.setFieldValue('capacity', '');
-                 }
-                 if (selectedType !== VenueObjectType.TABLE) {
-                     form.setFieldValue('isReservable', false);
-                     form.setFieldValue('reservationCost', '');
-                 }
-            }}
-            // END FIX 3
-          />
-
-          {/* Conditional Fields based on Type */}
-
-          {/* FIX: Cast formValues.type */}
-          {(formValues.type as VenueObjectType) === VenueObjectType.WORKSTATION && (
-            <Select
-              required
-              label="Estação de Trabalho Vinculada"
-              description="Qual estação este objeto representa?"
-              placeholder="Selecione a estação"
-              data={workstationSelectData}
-              {...form.getInputProps("workstationId")}
-              searchable
-            />
-          )}
-
-          {/* Check type directly */}
-          {(formValues.type === VenueObjectType.TABLE || formValues.type === VenueObjectType.BAR_SEAT) && (
-            <NumberInput
-              required
-              label="Capacidade (lugares)"
-              placeholder="2"
-              min={1}
-              step={1}
-              allowDecimal={false}
-              {...form.getInputProps("capacity")}
-            />
-          )}
-
-          {/* FIX: Cast formValues.type */}
-           {(formValues.type as VenueObjectType) === VenueObjectType.TABLE && (
-            <>
-                <Switch
-                  label="Pode ser reservado?"
-                  {...form.getInputProps('isReservable', { type: 'checkbox' })}
-                  mt="sm"
-                  onChange={(event) => {
-                      const checked = event.currentTarget.checked;
-                      form.setFieldValue('isReservable', checked);
-                      if (!checked) {
-                          form.setFieldValue('reservationCost', '');
-                      }
-                  }}
-                />
-                {formValues.isReservable && (
-                 <NumberInput
-                    required
-                    label="Custo da Reserva (R$)"
-                    placeholder="0.00"
-                    decimalScale={2}
-                    fixedDecimalScale
-                    min={0}
-                    step={0.01}
-                    {...form.getInputProps('reservationCost')}
-                    mt="xs"
-                 />
-               )}
-            </>
-           )}
-
-            {isStorageType && (
-                <Text size="sm" c="dimmed" mt="sm">Este objeto será usado como local de estoque.</Text>
-            )}
-
-          <Button type="submit" mt="xl" loading={isSubmitting}>
-            Salvar Objeto
+        <TextInput
+          withAsterisk
+          label="Nome do Objeto"
+          placeholder="Ex: Mesa 1, Estoque Seco"
+          {...form.getInputProps("name")}
+        />
+        <Select
+          withAsterisk
+          label="Tipo de Objeto"
+          data={Object.values(VenueObjectType).map((type) => ({
+            label: type,
+            value: type,
+          }))}
+          {...form.getInputProps("type")}
+        />
+        <Select
+          label="Estação de Trabalho Vinculada"
+          placeholder="Selecione (se aplicável)"
+          disabled={isLoadingWorkstations}
+          data={workstations?.map((ws) => ({
+            label: ws.name,
+            value: ws.id,
+          }))}
+          clearable
+          {...form.getInputProps("workstationId")}
+        />
+        <Group grow>
+          <NumberInput label="Largura (px)" min={10} {...form.getInputProps("width")} />
+          <NumberInput label="Altura (px)" min={10} {...form.getInputProps("height")} />
+        </Group>
+        <NumberInput label="Rotação (deg)" min={0} max={359} {...form.getInputProps("rotation")} />
+        
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={onClose}>
+            Cancelar
           </Button>
-        </Stack>
+          <Button type="submit" loading={isSubmitting}>
+            Salvar
+          </Button>
+        </Group>
       </form>
     </Modal>
   );

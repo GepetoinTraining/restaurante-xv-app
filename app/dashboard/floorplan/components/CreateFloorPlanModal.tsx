@@ -1,119 +1,96 @@
 // PATH: app/dashboard/floorplan/components/CreateFloorPlanModal.tsx
-// NOTE: This is a NEW FILE.
-
 "use client";
 
-import { useState } from "react";
-import {
-  Modal,
-  TextInput,
-  Button,
-  NumberInput,
-  Stack,
-  LoadingOverlay,
-} from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { Modal, Button, TextInput, NumberInput, Group } from "@mantine/core";
+import { useForm, zodResolver } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { ApiResponse } from "@/lib/types";
+import { z } from "zod";
 import { FloorPlan } from "@prisma/client";
+import { ApiResponse } from "@/lib/types";
 
-interface CreateFloorPlanModalProps {
+const schema = z.object({
+  name: z.string().min(1, "Nome é obrigatório"),
+  width: z.number().min(100, "Largura mínima é 100"),
+  height: z.number().min(100, "Altura mínima é 100"),
+});
+
+type Props = {
   opened: boolean;
   onClose: () => void;
   onSuccess: (newPlan: FloorPlan) => void;
-}
+};
 
-export function CreateFloorPlanModal({
-  opened,
-  onClose,
-  onSuccess,
-}: CreateFloorPlanModalProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
+export function CreateFloorPlanModal({ opened, onClose, onSuccess }: Props) {
   const form = useForm({
     initialValues: {
       name: "",
-      width: 100,
-      height: 100,
+      width: 1000,
+      height: 800,
     },
-    validate: {
-      name: (value) =>
-        value.trim().length < 2 ? "Nome é obrigatório" : null,
-      width: (value) => (value <= 0 ? "Largura deve ser positiva" : null),
-      height: (value) => (value <= 0 ? "Altura deve ser positiva" : null),
-    },
+    validate: zodResolver(schema),
   });
 
   const handleSubmit = async (values: typeof form.values) => {
-    setIsSubmitting(true);
     try {
-      const response = await fetch("/api/floorplans", {
+      const res = await fetch("/api/floorplans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
 
-      const data: ApiResponse<FloorPlan> = await response.json();
+      const data: ApiResponse<FloorPlan> = await res.json();
 
-      if (response.ok && data.success && data.data) {
+      if (data.success && data.data) {
         notifications.show({
           title: "Sucesso",
           message: "Planta baixa criada com sucesso!",
           color: "green",
         });
-        form.reset();
         onSuccess(data.data);
+        form.reset();
       } else {
-        notifications.show({
-          title: "Erro",
-          message: data.error || "Falha ao criar planta",
-          color: "red",
-        });
+        throw new Error(data.error || "Falha ao criar planta");
       }
     } catch (error) {
-      console.error("Submit error:", error);
       notifications.show({
         title: "Erro",
-        message: "Ocorreu um erro inesperado",
+        message: error instanceof Error ? error.message : "Erro desconhecido",
         color: "red",
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  const handleClose = () => {
-    form.reset();
-    onClose();
-  };
-
   return (
-    <Modal opened={opened} onClose={handleClose} title="Nova Planta Baixa">
-      <LoadingOverlay visible={isSubmitting} />
+    <Modal opened={opened} onClose={onClose} title="Criar Nova Planta Baixa">
       <form onSubmit={form.onSubmit(handleSubmit)}>
-        <Stack>
-          <TextInput
-            required
-            label="Nome da Planta"
-            placeholder="Ex: Térreo, Rooftop"
-            {...form.getInputProps("name")}
-          />
-          <NumberInput
-            required
-            label="Largura (unidades)"
-            min={10}
-            {...form.getInputProps("width")}
-          />
-          <NumberInput
-            required
-            label="Altura (unidades)"
-            min={10}
-            {...form.getInputProps("height")}
-          />
-          <Button type="submit" mt="md">
+        <TextInput
+          withAsterisk
+          label="Nome da Planta"
+          placeholder="Ex: Cozinha, Salão Principal"
+          {...form.getInputProps("name")}
+        />
+        <NumberInput
+          withAsterisk
+          label="Largura (px)"
+          min={100}
+          step={50}
+          {...form.getInputProps("width")}
+        />
+        <NumberInput
+          withAsterisk
+          label="Altura (px)"
+          min={100}
+          step={50}
+          {...form.getInputProps("height")}
+        />
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" loading={form.isSubmitting()}>
             Salvar
           </Button>
-        </Stack>
+        </Group>
       </form>
     </Modal>
   );

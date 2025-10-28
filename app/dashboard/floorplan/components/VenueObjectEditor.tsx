@@ -1,197 +1,293 @@
 // PATH: app/dashboard/floorplan/components/VenueObjectEditor.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
-  Table,
-  Button,
-  Group,
+  Paper,
+  Grid,
+  Box,
+  LoadingOverlay,
+  useMantineTheme,
   Text,
-  Badge,
-  ActionIcon,
-  Tooltip,
 } from "@mantine/core";
 import {
-  IconPlus,
-  IconPencil,
-  IconTrash,
-  IconQrcode, // CORRECTED: Was IconQrCode
-} from "@tabler/icons-react";
-import {
-  VenueObjectType,
-  Workstation,
-} from "@prisma/client";
-import { FloorPlanWithObjects } from "./FloorPlanManager"; // Import the type
-import { CreateVenueObjectModal } from "./CreateVenueObjectModal"; // We will create this next
-import { ApiResponse } from "@/lib/types";
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  useDroppable,
+  UniqueIdentifier,
+  Active,
+} from "@dnd-kit/core";
 import { notifications } from "@mantine/notifications";
+import { FloorPlanPalette } from "./FloorPlanPalette";
+import { DraggableVenueObject } from "./DraggableVenueObject";
+import { FloorPlanWithObjects } from "./FloorPlanManager";
+import { CreateVenueObjectModal } from "./CreateVenueObjectModal";
+import { VenueObject, VenueObjectType, Workstation } from "@prisma/client";
+import { ApiResponse } from "@/lib/types";
+import { useDisclosure } from "@mantine/hooks";
+import { modals } from "@mantine/modals";
 
-interface VenueObjectEditorProps {
+type Props = {
   floorPlan: FloorPlanWithObjects;
   onRefresh: () => void;
-}
-
-// Helper to format VenueObjectType
-const formatObjectType = (type: VenueObjectType) => {
-  switch (type) {
-    case "TABLE":
-      return "Mesa";
-    case "BAR_SEAT":
-      return "Lugar no Bar";
-    case "WORKSTATION":
-      return "Estação (PDV)";
-    case "ENTERTAINMENT":
-      return "Entretenimento";
-    case "IMPASSABLE":
-      return "Obstrução";
-    default:
-      return type;
-  }
 };
 
-export function VenueObjectEditor({
-  floorPlan,
-  onRefresh,
-}: VenueObjectEditorProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [workstations, setWorkstations] = useState<Workstation[]>([]);
+type FullVenueObject = VenueObject & { workstation: Workstation | null };
 
-  // Fetch workstations to pass to the modal
-  const fetchWorkstations = async () => {
+// 1. The Droppable Canvas Component
+function FloorPlanCanvas({
+  width,
+  height,
+  imageUrl,
+  children,
+}: {
+  width: number;
+  height: number;
+  imageUrl?: string | null;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "floor-plan-canvas",
+  });
+
+  const theme = useMantineTheme();
+  const background = imageUrl
+    ? `url(${imageUrl})`
+    : theme.colorScheme === "dark"
+    ? theme.colors.dark[7]
+    : theme.colors.gray[1];
+
+  return (
+    <Paper
+      ref={setNodeRef}
+      shadow="inner"
+      withBorder
+      style={{
+        width: width,
+        height: height,
+        position: "relative",
+        background: background,
+        backgroundSize: "cover",
+        overflow: "hidden", // Clip objects
+        borderStyle: isOver ? "dashed" : "solid",
+        borderColor: isOver ? theme.colors.blue[5] : undefined,
+      }}
+    >
+      {children}
+    </Paper>
+  );
+}
+
+// 2. The Main Editor
+export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
+  const [activeDragItem, setActiveDragItem] = useState<Active | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const canvasRef = useRef<HTMLDivElement>(null); // Ref for coordinate calculation
+
+  // Modal state
+  const [modalOpened, { open: openModal, close: closeModal }] =
+    useDisclosure(false);
+  const [modalInitialData, setModalInitialData] = useState<
+    Partial<FullVenueObject>
+  >({});
+
+  // API call to update an object
+  const updateObjectPosition = async (
+    id: string,
+    newX: number,
+    newY: number
+  ) => {
+    setIsSubmitting(true);
     try {
-      const response = await fetch("/api/workstations");
-      const data: ApiResponse<Workstation[]> = await response.json();
-      if (data.success && data.data) {
-        setWorkstations(data.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch workstations", error);
-    }
-  };
-
-  useEffect(() => {
-    fetchWorkstations();
-  }, []);
-
-  const handleDelete = async (objectId: string) => {
-    if (!confirm("Tem certeza que deseja remover este objeto?")) return;
-
-    try {
-      const res = await fetch("/api/venue-objects", {
-        method: "DELETE",
+      const res = await fetch(`/api/venue-objects/${id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: objectId }),
+        body: JSON.stringify({ anchorX: newX, anchorY: newY }),
       });
-
-      const data: ApiResponse = await res.json();
-
-      if (data.success) {
-        notifications.show({
-          title: "Sucesso",
-          message: "Objeto removido.",
-          color: "green",
-        });
-        onRefresh(); // Refresh the object list
-      } else {
-        notifications.show({
-          title: "Erro",
-          message: data.error || "Falha ao remover objeto.",
-          color: "red",
-        });
-      }
+      if (!res.ok) throw new Error("Failed to update position");
+      // No need to refresh, optimistic update already happened
+      // We just need to trigger the parent's refresh
+      onRefresh();
     } catch (error) {
       notifications.show({
         title: "Erro",
-        message: "Erro inesperado.",
+        message: "Falha ao salvar a nova posição.",
         color: "red",
       });
+      // Revert change (by refreshing)
+      onRefresh();
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const rows = floorPlan.objects.map((obj) => (
-    <Table.Tr key={obj.id}>
-      <Table.Td>{obj.name}</Table.Td>
-      <Table.Td>
-        <Badge>{formatObjectType(obj.type)}</Badge>
-      </Table.Td>
-      <Table.Td>{obj.workstation?.name || "N/A"}</Table.Td>
-      <Table.Td>
-        <Tooltip label="Ver QR Code (em breve)">
-          <ActionIcon variant="transparent" color="gray">
-            {/* CORRECTED: Was IconQrCode */}
-            <IconQrcode size={18} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Editar (em breve)">
-          <ActionIcon variant="transparent" color="blue">
-            <IconPencil size={18} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Remover">
-          <ActionIcon
-            variant="transparent"
-            color="red"
-            onClick={() => handleDelete(obj.id)}
-          >
-            <IconTrash size={18} />
-          </ActionIcon>
-        </Tooltip>
-      </Table.Td>
-    </Table.Tr>
-  ));
+  // API call to delete an object
+  const deleteObject = async (id: string) => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/venue-objects/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete object");
+      notifications.show({
+        title: "Sucesso",
+        message: "Objeto excluído.",
+        color: "green",
+      });
+      onRefresh(); // Refresh to show deletion
+    } catch (error) {
+      notifications.show({
+        title: "Erro",
+        message: "Falha ao excluir o objeto.",
+        color: "red",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Open the confirmation modal for deletion
+  const openDeleteModal = (object: FullVenueObject) => {
+    modals.openConfirmModal({
+      title: "Confirmar Exclusão",
+      children: (
+        <Text size="sm">
+          Tem certeza que deseja excluir o objeto: <strong>{object.name}</strong>
+          ?
+        </Text>
+      ),
+      labels: { confirm: "Excluir", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: () => deleteObject(object.id),
+    });
+  };
+
+  // Handle drag start
+  const handleDragStart = (event: { active: Active }) => {
+    setActiveDragItem(event.active);
+  };
+
+  // Handle drag end (the core logic)
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragItem(null);
+    const { active, over, delta } = event;
+
+    // Not dropped on canvas, do nothing
+    if (!over || over.id !== "floor-plan-canvas") return;
+
+    const dragType = active.data.current?.type;
+
+    if (dragType === "PALETTE_ITEM") {
+      // --- CASE 1: Dropped a NEW item from the palette ---
+      
+      // Get canvas bounding box
+      const canvasRect = canvasRef.current?.getBoundingClientRect();
+      if (!canvasRect) return;
+      
+      // Calculate drop position relative to the canvas
+      // active.dragStart?.payload.clientX/Y is where the drag started
+      // We want the final drop position
+      const dropX = (active.dragStart?.payload.clientX ?? 0) - canvasRect.left + delta.x;
+      const dropY = (active.dragStart?.payload.clientY ?? 0) - canvasRect.top + delta.y;
+
+      const objectType = active.data.current?.objectType as VenueObjectType;
+      const label = active.data.current?.label as string;
+
+      // Pre-fill modal data
+      setModalInitialData({
+        name: `${label} (Novo)`,
+        type: objectType,
+        anchorX: Math.round(dropX),
+        anchorY: Math.round(dropY),
+        width: objectType === "TABLE" ? 100 : 150,
+        height: objectType === "TABLE" ? 100 : 150,
+      });
+      openModal();
+      
+    } else if (dragType === "VENUE_OBJECT") {
+      // --- CASE 2: Moved an EXISTING item ---
+      const objectId = active.data.current?.objectId as string;
+      const originalX = active.data.current?.originalX as number;
+      const originalY = active.data.current?.originalY as number;
+
+      const newX = Math.round(originalX + delta.x);
+      const newY = Math.round(originalY + delta.y);
+
+      // Optimistic UI update (feels faster)
+      // The parent `floorPlan.objects` will update onRefresh
+      
+      // Call API to save new position
+      updateObjectPosition(objectId, newX, newY);
+    }
+  };
+
+  // Callback for when the modal saves
+  const handleModalSuccess = (
+    newObject: FullVenueObject
+  ) => {
+    closeModal();
+    onRefresh(); // Refresh the whole plan to show the new/edited object
+  };
 
   return (
-    <>
-      <Group justify="space-between" mb="md">
-        <Text fw={500}>Objetos em "{floorPlan.name}"</Text>
-        <Button
-          leftSection={<IconPlus size={14} />}
-          onClick={() => setIsModalOpen(true)}
-          disabled={workstations.length === 0} // Disable if workstations haven't loaded
-        >
-          Novo Objeto
-        </Button>
-      </Group>
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <Grid>
+        <Grid.Col span={{ base: 12, md: 3 }}>
+          <FloorPlanPalette />
+        </Grid.Col>
 
-      <Text c="dimmed" size="xs" mb="md">
-        NOTA: Este é um editor em lista. A funcionalidade de arrastar e soltar
-        será implementada futuramente.
-      </Text>
+        <Grid.Col span={{ base: 12, md: 9 }} ref={canvasRef}>
+          <Box style={{ position: "relative" }}>
+            <LoadingOverlay visible={isSubmitting} />
+            <FloorPlanCanvas
+              width={floorPlan.width}
+              height={floorPlan.height}
+              imageUrl={floorPlan.imageUrl}
+            >
+              {/* Render all existing objects */}
+              {floorPlan.objects.map((obj) => (
+                <DraggableVenueObject
+                  key={obj.id}
+                  object={obj}
+                  onEdit={() => {
+                    setModalInitialData(obj);
+                    openModal();
+                  }}
+                  onDelete={() => openDeleteModal(obj)}
+                />
+              ))}
+            </FloorPlanCanvas>
+          </Box>
+        </Grid.Col>
+      </Grid>
 
-      <Table.ScrollContainer minWidth={500}>
-        <Table verticalSpacing="sm" striped>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Nome</Table.Th>
-              <Table.Th>Tipo</Table.Th>
-              <Table.Th>Estação (se PDV)</Table.Th>
-              <Table.Th>Ações</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {rows.length > 0 ? (
-              rows
-            ) : (
-              <Table.Tr>
-                <Table.Td colSpan={4}>
-                  <Text ta="center">Nenhum objeto nesta planta</Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+      {/* Drag overlay to show a preview while dragging */}
+      <DragOverlay>
+        {activeDragItem?.data.current?.type === "PALETTE_ITEM" && (
+          <Paper p="xs" shadow="xl" bg="blue.1">
+            <Text size="sm">{activeDragItem.data.current.label}</Text>
+          </Paper>
+        )}
+        {activeDragItem?.data.current?.type === "VENUE_OBJECT" && (
+          <Paper p="xs" shadow="xl" bg="green.1" style={{ opacity: 0.8 }}>
+            <Text size="sm">
+              {floorPlan.objects.find(
+                (o) => o.id === activeDragItem.data.current?.objectId
+              )?.name || "Objeto"}
+            </Text>
+          </Paper>
+        )}
+      </DragOverlay>
 
+      {/* The modal for creating/editing */}
       <CreateVenueObjectModal
-        opened={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => {
-          setIsModalOpen(false);
-          onRefresh(); // Refresh the list after creation
-        }}
+        opened={modalOpened}
+        onClose={closeModal}
+        onSuccess={handleModalSuccess}
         floorPlanId={floorPlan.id}
-        workstations={workstations}
+        initialData={modalInitialData}
       />
-    </>
+    </DndContext>
   );
 }
