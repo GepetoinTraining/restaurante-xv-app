@@ -44,6 +44,9 @@ async function main() {
   await prisma.recipeIngredient.deleteMany();
   await prisma.recipe.deleteMany();
   await prisma.product.deleteMany();
+  // --- START FIX: Add missing models to delete ---
+  await prisma.buffetStation.deleteMany();
+  // --- END FIX ---
   await prisma.venueObject.deleteMany();
   await prisma.floorPlan.deleteMany();
   await prisma.workstation.deleteMany();
@@ -58,7 +61,10 @@ async function main() {
   // 2. --- Core Setup (Users, Workstations, Locations, Vehicles) ---
   console.log("Seeding core setup...");
 
+  // --- START FIX: Changed PIN to 6 digits ---
   const hashedPin = await bcrypt.hash("123456", 10);
+  // --- END FIX ---
+
   const owner = await prisma.user.create({
     data: {
       name: "Ana Proprietária",
@@ -79,7 +85,7 @@ async function main() {
 
   const driver = await prisma.user.create({
     data: {
-      name: "Daniel Diretor",
+      name: "Daniel Diretor", // Note: Role is DRIVER, name is "Diretor"
       email: "driver@restaurante.com",
       pin: hashedPin,
       role: Role.DRIVER,
@@ -126,22 +132,59 @@ async function main() {
     data: { name: "GN 1/2 (100mm)", tareWeightG: 900, capacityL: 6.5 },
   });
 
-  // Create a pool of pans
-  for (let i = 1; i <= 10; i++) {
+  // --- START: Seed Buffet Stations ---
+  console.log("Seeding buffet stations...");
+  const stationQuentes = await prisma.buffetStation.create({
+      data: { name: "Quentes", displayOrder: 1 }
+  });
+  const stationSaladas = await prisma.buffetStation.create({
+      data: { name: "Saladas", displayOrder: 2 }
+  });
+  const stationSobremesas = await prisma.buffetStation.create({
+      data: { name: "Sobremesas", displayOrder: 3 }
+  });
+  // --- END: Seed Buffet Stations ---
+
+
+  // Create a pool of pans and assign them to stations
+  console.log("Seeding serving pans...");
+  for (let i = 1; i <= 5; i++) {
     await prisma.servingPan.create({
       data: {
         panModelId: panModelGN1_1.id,
         uniqueIdentifier: `GN11-${i.toString().padStart(3, "0")}`,
         status: PanStatus.AVAILABLE,
+        buffetStationId: stationQuentes.id, // Assign to 'Quentes'
       },
     });
   }
-  for (let i = 1; i <= 15; i++) {
+    for (let i = 6; i <= 10; i++) {
+    await prisma.servingPan.create({
+      data: {
+        panModelId: panModelGN1_1.id,
+        uniqueIdentifier: `GN11-${i.toString().padStart(3, "0")}`,
+        status: PanStatus.AVAILABLE,
+        // Leave some unassigned
+      },
+    });
+  }
+  for (let i = 1; i <= 8; i++) {
     await prisma.servingPan.create({
       data: {
         panModelId: panModelGN1_2.id,
         uniqueIdentifier: `GN12-${i.toString().padStart(3, "0")}`,
         status: PanStatus.AVAILABLE,
+        buffetStationId: stationSaladas.id, // Assign to 'Saladas'
+      },
+    });
+  }
+  for (let i = 9; i <= 15; i++) {
+    await prisma.servingPan.create({
+      data: {
+        panModelId: panModelGN1_2.id,
+        uniqueIdentifier: `GN12-${i.toString().padStart(3, "0")}`,
+        status: PanStatus.AVAILABLE,
+        buffetStationId: stationSobremesas.id, // Assign to 'Sobremesas'
       },
     });
   }
@@ -171,6 +214,18 @@ async function main() {
       type: VenueObjectType.FREEZER,
       floorPlanId: floorPlanCozinha.id,
       anchorX: 50,
+      anchorY: 250,
+      width: 150,
+      height: 150,
+    },
+  });
+  
+    const voGeladeiraSalada = await prisma.venueObject.create({
+    data: {
+      name: "Geladeira Saladas",
+      type: VenueObjectType.STORAGE, // Or a more specific type if you add one
+      floorPlanId: floorPlanCozinha.id,
+      anchorX: 250,
       anchorY: 250,
       width: 150,
       height: 150,
@@ -240,6 +295,23 @@ async function main() {
       costAtAcquisition: 0.002,
     },
   });
+    await prisma.stockHolding.create({
+    data: {
+      ingredientId: ingAlface.id,
+      venueObjectId: voGeladeiraSalada.id,
+      quantity: 20, // 20 unidades
+      costAtAcquisition: 2.5,
+    },
+  });
+    await prisma.stockHolding.create({
+    data: {
+      ingredientId: ingTomate.id,
+      venueObjectId: voGeladeiraSalada.id,
+      quantity: 5000, // 5kg
+      costAtAcquisition: 0.01,
+    },
+  });
+
 
   // 5. --- Prepared Ingredients & Prep Recipes ---
   console.log("Seeding prep recipes...");
@@ -430,6 +502,39 @@ async function main() {
       },
     },
   });
+
+  // --- START: Add some buffet pan data ---
+  console.log("Seeding pan contents...");
+  
+  // Find some pans to fill
+  const pan1 = await prisma.servingPan.findFirst({ where: { buffetStationId: stationQuentes.id }});
+  const pan2 = await prisma.servingPan.findFirst({ where: { buffetStationId: stationSaladas.id }});
+
+  if (pan1) {
+    await prisma.servingPan.update({
+      where: { id: pan1.id },
+      data: {
+        ingredientId: ingFrangoGrelhado.id,
+        currentQuantity: 5000, // 5kg
+        capacity: 8000, // 8kg capacity
+        status: PanStatus.IN_USE,
+      }
+    });
+  }
+    
+  if (pan2) {
+    await prisma.servingPan.update({
+      where: { id: pan2.id },
+      data: {
+        ingredientId: ingTomate.id,
+        currentQuantity: 1500, // 1.5kg
+        capacity: 3000, // 3kg capacity
+        status: PanStatus.IN_USE,
+      }
+    });
+  }
+  // --- END: Add buffet pan data ---
+
 
   console.log("Seeding finished.");
 }
