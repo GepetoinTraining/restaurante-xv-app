@@ -4,15 +4,14 @@
 import { NavLink, Stack, Button, Text, Skeleton, ScrollArea } from "@mantine/core";
 import {
     LayoutDashboard, Users, Martini, Archive, Calculator,
-    UserPlus, LineChart, LogOut, Armchair, Package, // Removed Music, Disc
+    UserPlus, LineChart, LogOut, Armchair, Package,
     CookingPot, ClipboardCheck, ClipboardList,
     Receipt, Scale, Trash2
-} from "lucide-react"; // Removed Music, Disc icons
+} from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useState, useEffect } from "react";
 import { ApiResponse, StaffSession } from "@/lib/types";
 
-// Updated navigation links - Removed unimplemented ones and Vinyl
 const links = [
     // Core Links
     { icon: LayoutDashboard, label: "Visão Geral", href: "/dashboard/live" },
@@ -33,17 +32,12 @@ const links = [
     { icon: Scale, label: "Buffet & Pesagem", href: "/dashboard/weigh-station" },
     { icon: Trash2, label: "Registro de Perdas", href: "/dashboard/waste" },
 
-    // Entertainment
-    // { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" }, // <-- REMOVED
-    // { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" }, // <-- REMOVED
-
     // Admin & Reporting
     { icon: UserPlus, label: "Equipe", href: "/dashboard/staff" },
     { icon: LineChart, label: "Relatórios", href: "/dashboard/reports" },
 ];
 
 
-// Helper function to fetch session (client-side)
 async function getClientSession(): Promise<StaffSession | null> {
     try {
         const res = await fetch('/api/session');
@@ -75,15 +69,14 @@ export function MainNav() {
 
     const handleLogout = async () => {
         await fetch("/api/auth", { method: "DELETE" });
-        router.push("/"); // Redirect to landing page after logout
-        router.refresh(); // Refresh to clear any cached state
+        router.push("/"); 
+        router.refresh(); 
     };
 
 
     return (
         <Stack justify="space-between" style={{ height: "100%" }}>
-            {/* Added ScrollArea for long navigation lists */}
-            <ScrollArea type="auto" style={{ flexGrow: 1, paddingRight: 'var(--mantine-spacing-md)' /* Prevent scrollbar overlap */ }}>
+            <ScrollArea type="auto" style={{ flexGrow: 1, paddingRight: 'var(--mantine-spacing-md)' }}>
                 <Stack>
                     {links.map((link) => (
                         <NavLink
@@ -91,38 +84,46 @@ export function MainNav() {
                             href={link.href}
                             label={link.label}
                             leftSection={<link.icon size="1rem" />}
-                            // Improved active state logic: exact match for '/', startsWith for others
                             active={pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href + '/'))}
                             onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                                 e.preventDefault();
                                 router.push(link.href);
                             }}
                             variant="subtle"
-                            styles={(theme) => ({
-                                root: {
-                                  borderRadius: theme.radius.sm,
-                                  // Styles for the active state (independent of color scheme)
-                                  '&[data-active]': {
-                                    backgroundColor: theme.fn.variant({ variant: 'light', color: theme.primaryColor }).background,
-                                    color: theme.fn.variant({ variant: 'light', color: theme.primaryColor }).color,
-                                    fontWeight: 500,
-                                    // Target SVG specifically within active link
-                                    '& svg': {
-                                       color: theme.fn.variant({ variant: 'light', color: theme.primaryColor }).color,
+                            styles={(theme) => {
+                                const activeColors = theme.variantColorResolver({
+                                    color: theme.primaryColor,
+                                    variant: 'light',
+                                    theme,
+                                });
+
+                                return {
+                                    root: {
+                                      borderRadius: theme.radius.sm,
+                                      
+                                      '&[data-active]': {
+                                        backgroundColor: activeColors.background,
+                                        color: activeColors.color,
+                                        fontWeight: 500,
+                                        '& svg': {
+                                           color: activeColors.color,
+                                        },
+                                      },
+                                      
+                                      // ---- START FIX ----
+                                      // Use Mantine's CSS variable for default hover
+                                      '&:hover:not([data-active])': {
+                                          backgroundColor: 'var(--mantine-color-default-hover)',
+                                      },
+                                      // ---- END FIX ----
                                     },
-                                  },
-                                  // Default hover state
-                                  '&:hover:not([data-active])': {
-                                      backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.gray[1],
-                                  },
-                                },
-                            })}
+                                };
+                            }}
                         />
                     ))}
                 </Stack>
             </ScrollArea>
 
-            {/* User Info and Logout Button */}
             <Stack gap="xs" pt="md" style={{ borderTop: `1px solid var(--mantine-color-default-border)`}}>
                  {loadingSession ? (
                     <Skeleton height={15} width="70%" radius="sm" />
