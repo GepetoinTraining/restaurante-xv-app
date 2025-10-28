@@ -46,14 +46,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         }
 
         // --- Transaction: Find Pan, Deduct Stock, Update Pan ---
-        const updatedPan = await prisma.$transaction(async (tx) => {
+        // ---- START FIX (ts(7006)): Add explicit type for 'tx' ----
+        const updatedPan = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // ---- END FIX ----
             // 1. Get Pan details (including ingredientId and capacity)
             const pan = await tx.servingPan.findUnique({
                 where: { id: panId },
-                // ---- START FIX ----
                 // Include ingredient details *including costPerUnit*
                 include: { ingredient: { select: { id: true, name: true, unit: true, costPerUnit: true } } }
-                // ---- END FIX ----
             });
             if (!pan) throw new Error("Cuba do buffet não encontrada.");
             if (!pan.ingredient) throw new Error(`Cuba ${panId} não tem um ingrediente associado.`);
@@ -65,8 +65,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
                 throw new Error(`ID do ingrediente não encontrado para a cuba ${panId}.`);
             }
 
-            // Ensure refill doesn't exceed capacity (optional)
-            // ...
+            // Ensure refill doesn't exceed capacity (if capacity is defined)
+            if (pan.capacity !== null) {
+                const currentQuantity = pan.currentQuantity;
+                const newTotalQuantity = currentQuantity.plus(quantityToAddDecimal);
+                if (newTotalQuantity.greaterThan(pan.capacity)) {
+                    throw new Error(`Refill amount exceeds pan capacity. Max add: ${pan.capacity.minus(currentQuantity).toString()}`);
+                }
+            }
+
 
             // 2. Deduct from StockHolding at sourceLocationId
             const requiredQuantity = quantityToAddDecimal;
@@ -100,7 +107,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             }
 
             // 3. Update servingPan quantity
+            // ---- START FIX (Typo): Changed 'ServingPan' to 'servingPan' (lowercase 's') ----
             return await tx.servingPan.update({
+            // ---- END FIX ----
                 where: { id: panId },
                 data: {
                     currentQuantity: {
@@ -117,7 +126,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         const serializedPan = {
              ...updatedPan,
              currentQuantity: updatedPan.currentQuantity.toString(),
-             capacity: updatedPan.capacity.toString(),
+             // ---- START FIX (Null Check): Check if capacity is null before calling toString() ----
+             capacity: updatedPan.capacity !== null ? updatedPan.capacity.toString() : null,
+             // ---- END FIX ----
              // Serialize ingredient cost too if included in final response object
              ingredient: updatedPan.ingredient ? {
                  ...updatedPan.ingredient,
@@ -138,7 +149,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
              return NextResponse.json<ApiResponse>({ success: false, error: "Cuba do buffet ou localização de estoque não encontrada." }, { status: 404 });
          }
-         if (error.message.startsWith('Estoque insuficiente') || error.message.startsWith('Cuba do buffet não encontrada') || error.message.includes('capacidade da cuba') || error.message.includes('ID do ingrediente não encontrado')) {
+         // Updated error check to include 'capacity'
+         if (error.message.startsWith('Estoque insuficiente') || error.message.startsWith('Cuba do buffet não encontrada') || error.message.includes('capacity') || error.message.includes('ID do ingrediente não encontrado')) {
              return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 400 }); // Bad request due to business logic
          }
         return NextResponse.json<ApiResponse>(
