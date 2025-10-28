@@ -6,7 +6,7 @@ import { getStatusInfo } from "@/lib/utils";
 import { Card, Text, Badge, Group, ActionIcon, Menu, Title, Stack } from "@mantine/core";
 import { IconDots, IconUserCheck, IconPlayerPlay, IconCheck, IconX, IconTrash, IconCalendarTime, IconUser, IconMapPin, IconClockHour4, IconUserX } from "@tabler/icons-react"; // Added more icons
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin-relativeTime';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/pt-br';
 
 dayjs.extend(relativeTime);
