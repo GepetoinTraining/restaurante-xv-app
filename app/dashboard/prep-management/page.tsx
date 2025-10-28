@@ -1,269 +1,316 @@
 // PATH: app/dashboard/prep-management/page.tsx
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { Container, Stack, Title, Text, Loader, Alert, SimpleGrid, SegmentedControl, Button, Group, Center } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
-import { ApiResponse, SerializedPrepTask, SerializedPrepRecipe, StorageLocation, StaffSession, UserWithWorkstation } from "@/lib/types"; // Added more types
+import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { ApiResponse, SerializedPrepTask, StorageLocation, UserWithWorkstation } from "@/lib/types";
+import { Alert, Grid, LoadingOverlay, SegmentedControl, Text, Group, Box, Title, Badge, Button } from "@mantine/core"; // Added Button
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IconAlertCircle, IconToolsKitchen2 } from "@tabler/icons-react";
+import { useState } from "react";
 import { notifications } from "@mantine/notifications";
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { IconAlertCircle, IconPlus } from "@tabler/icons-react";
-import { WorkflowCard } from "@/app/components/WorkflowCard";
-import { PrepTaskStatus } from "@prisma/client";
 import { useDisclosure } from "@mantine/hooks";
-import { CreatePrepTaskModal } from "./components/CreatePrepTaskModal"; // Import create modal
-import { AssignTaskModal } from "./components/AssignTaskModal"; // Import assign modal
+import { WorkflowCard } from "@/app/components/WorkflowCard"; 
+import { AssignTaskModal } from "./components/AssignTaskModal";
+import { CreatePrepTaskModal } from "./components/CreatePrepTaskModal";
+import { SerializedPrepRecipe } from "@/lib/types"; 
 
 // Create a client
-const queryClientInternal = new QueryClient();
+const queryClient = new QueryClient();
 
-// Type for filters
-type TaskMgmtFilter = "pending" | "assigned" | "inprogress" | "recent"; // Added recent
+// Define status filters
+const statusFilters = [
+    { label: 'Pendentes', value: 'PENDING,ASSIGNED' },
+    { label: 'Em Progresso', value: 'IN_PROGRESS' },
+    { label: 'Concluídas', value: 'COMPLETED' },
+    { label: 'Todas', value: 'ALL' },
+];
 
-// Wrapper for React Query
-export default function PrepManagementPageWrapper() {
-    return (
-        <QueryClientProvider client={queryClientInternal}>
-            <PrepManagementPage/>
-        </QueryClientProvider>
-    );
-}
-
-// Main page component
-function PrepManagementPage() {
-    const internalQueryClient = useQueryClient(); // Use hook inside provider context
-    const [filter, setFilter] = useState<TaskMgmtFilter>("pending");
-    const [createModalOpened, { open: openCreateModal, close: closeCreateModal }] = useDisclosure(false);
-    const [assignModalOpened, { open: openAssignModal, close: closeAssignModal }] = useDisclosure(false);
+// Main component content
+function PrepManagementContent() {
+    const queryClientInstance = useQueryClient();
+    const [statusFilter, setStatusFilter] = useState(statusFilters[0].value);
     const [taskToAssign, setTaskToAssign] = useState<SerializedPrepTask | null>(null);
 
-    // Fetch Staff (Users) for assignment dropdowns
-    const { data: staffList, isLoading: isLoadingStaff } = useQuery<UserWithWorkstation[]>({
-        queryKey: ['staffList'],
-        queryFn: async () => {
-            const res = await fetch('/api/staff');
-            const result: ApiResponse<UserWithWorkstation[]> = await res.json();
-            if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar equipe");
-            // Filter for roles that can execute prep tasks? e.g., COOK, BARTENDER
-            return result.data?.filter(user => user.isActive && (user.role === 'COOK' || user.role === 'BARTENDER' || user.role === 'MANAGER' || user.role === 'OWNER')) ?? [];
-        }
-    });
+    const [
+        createModalOpened,
+        { open: openCreateModal, close: closeCreateModal },
+    ] = useDisclosure(false);
+    const [
+        assignModalOpened,
+        { open: openAssignModal, close: closeAssignModal },
+    ] = useDisclosure(false);
 
-    // Fetch Prep Recipes for create modal
-     const { data: prepRecipes, isLoading: isLoadingRecipes } = useQuery<SerializedPrepRecipe[]>({
-        queryKey: ['prepRecipes'], // Reuse key if appropriate
-        queryFn: async () => {
-            const res = await fetch("/api/prep-recipes");
-            const result: ApiResponse<SerializedPrepRecipe[]> = await res.json();
-            if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar receitas de preparo");
-            return result.data ?? [];
-        },
-    });
-
-     // Fetch Storage Locations for create modal
-    const { data: locations, isLoading: isLoadingLocations } = useQuery<StorageLocation[]>({
-        queryKey: ['storageLocations'], // Reuse key
-        queryFn: async () => {
-            const res = await fetch("/api/storage-locations");
-            const result: ApiResponse<StorageLocation[]> = await res.json();
-            if (result.success && result.data) return result.data;
-            throw new Error(result.error || "Falha ao buscar locais de estoque");
-        },
-    });
-
-
-    // Fetch Prep Tasks based on filter
-    const {
-        data: tasks,
-        isLoading: isLoadingTasks,
-        isError,
-        error,
-        refetch,
-    } = useQuery<SerializedPrepTask[]>({
-        queryKey: ['prepTasksMgmt', filter],
-        queryFn: async () => {
+    // Query to fetch ALL prep tasks based on filter
+    const { data: tasks, isLoading, error } = useQuery<SerializedPrepTask[]>({
+        queryKey: ['allPrepTasks', statusFilter], // Add filter to query key
+        queryFn: () => {
             const params = new URLSearchParams();
-            let statusFilter = '';
-            let includeCompleted = false;
-
-            switch (filter) {
-                case 'pending': statusFilter = 'PENDING'; break;
-                case 'assigned': statusFilter = 'ASSIGNED'; break;
-                case 'inprogress': statusFilter = 'IN_PROGRESS'; break;
-                case 'recent':
-                    statusFilter = 'COMPLETED,CANCELLED'; // Fetch recent completed/cancelled
-                    includeCompleted = true;
-                     // Add date range later if needed
-                    break;
+            if (statusFilter !== 'ALL') {
+                params.append('status', statusFilter);
             }
-             params.set('status', statusFilter);
-             if(includeCompleted) params.set('includeCompleted', 'true');
-
-            const res = await fetch(`/api/prep-tasks?${params.toString()}`);
-            const result: ApiResponse<SerializedPrepTask[]> = await res.json();
-            if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar tarefas de preparo");
-            return result.data ?? [];
+            return fetch(`/api/prep-tasks?${params.toString()}`).then(res => res.json()).then(data => {
+                if (!data.success) throw new Error(data.error || "Failed to fetch tasks");
+                return data.data;
+            });
         },
-         refetchInterval: 30000, // Refetch every 30 seconds
-         refetchIntervalInBackground: true,
+    });
+    
+    // Query to fetch staff (for assign modal)
+     const { data: staffList } = useQuery<UserWithWorkstation[]>({
+        queryKey: ['staffList'],
+        queryFn: () =>
+            fetch('/api/staff').then(res => res.json()).then(data => {
+                if (!data.success) throw new Error(data.error || "Failed to fetch staff");
+                return data.data;
+            }),
+    });
+    
+     // Query to fetch prep recipes (for create modal)
+    const { data: prepRecipes } = useQuery<SerializedPrepRecipe[]>({
+        queryKey: ['prepRecipes'],
+        queryFn: () => fetch('/api/prep-recipes').then(res => res.json()).then(data => data.data),
     });
 
-    // Mutation for Assigning/Unassigning
-    const assignTaskMutation = useMutation<
-        ApiResponse<SerializedPrepTask>, Error, { taskId: string; userId: string | null }
-    >({
-        mutationFn: ({ taskId, userId }) => fetch(`/api/prep-tasks/${taskId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: userId ? PrepTaskStatus.ASSIGNED : PrepTaskStatus.PENDING, assignedToUserId: userId }),
-        }).then(res => res.json().then(data => {
-            if (!res.ok) throw new Error(data.error || `Falha ao ${userId ? 'atribuir' : 'desatribuir'} tarefa`);
-            return data;
-        })),
-        onSuccess: (data, variables) => {
-            if (data.success) {
-                notifications.show({ title: 'Sucesso', message: `Tarefa ${variables.userId ? 'atribuída' : 'retornou para pendente'}!`, color: 'green' });
-                refetch(); // Refetch the list
-            } else {
-                notifications.show({ title: 'Erro', message: data.error || 'Falha na operação', color: 'red' });
-            }
+    // Query to fetch storage locations (for create modal)
+    const { data: storageLocations } = useQuery<StorageLocation[]>({
+        queryKey: ['storageLocations'],
+        queryFn: () => fetch('/api/storage-locations').then(res => res.json()).then(data => data.data),
+    });
+
+
+    // Mutation for CREATING a task
+    // ---- START FIX: Update mutation type to match modal form ----
+    const createTaskMutation = useMutation<SerializedPrepTask, Error, { 
+        prepRecipeId: string | null;
+        targetQuantity: string;
+        locationId: string | null;
+        assignedToUserId: string | null;
+        notes: string;
+     }>({
+    // ---- END FIX ----
+         mutationFn: (newData) =>
+            fetch(`/api/prep-tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newData),
+            }).then(res => res.json()).then(apiRes => {
+                if (!apiRes.success) throw new Error(apiRes.error || "Failed to create task");
+                return apiRes.data;
+            }),
+        onSuccess: (newTask) => {
+            queryClientInstance.invalidateQueries({ queryKey: ['allPrepTasks'] });
+            notifications.show({
+                title: 'Tarefa Criada!',
+                message: `Tarefa "${newTask.prepRecipe.name}" foi criada.`,
+                color: 'green',
+            });
+            closeCreateModal();
         },
         onError: (error) => {
-             notifications.show({ title: 'Erro', message: error.message, color: 'red' });
-        }
+            notifications.show({
+                title: 'Erro ao criar tarefa',
+                message: error.message,
+                color: 'red',
+            });
+        },
     });
 
 
-    const handleOpenAssignModal = (task: SerializedPrepTask) => {
+    // Mutation for UPDATING task status or assignment
+    const updateTaskMutation = useMutation<SerializedPrepTask, Error, { id: string; status: string; data?: any }>({
+        mutationFn: ({ id, status, data }) =>
+            fetch(`/api/prep-tasks/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, ...data }),
+            }).then(res => res.json()).then(apiRes => {
+                if (!apiRes.success) throw new Error(apiRes.error || "Failed to update task");
+                return apiRes.data;
+            }),
+        onSuccess: (updatedTask) => {
+            queryClientInstance.invalidateQueries({ queryKey: ['allPrepTasks'] });
+            queryClientInstance.invalidateQueries({ queryKey: ['myPrepTasks'] }); // Invalidate user's view
+            
+            notifications.show({
+                title: 'Tarefa Atualizada!',
+                message: `Status da tarefa "${updatedTask.prepRecipe.name}" mudado para ${updatedTask.status}`,
+                color: 'blue',
+            });
+            closeAssignModal(); // Close assign modal on success
+        },
+        onError: (error) => {
+            notifications.show({
+                title: 'Erro ao atualizar tarefa',
+                message: error.message,
+                color: 'red',
+            });
+        },
+    });
+    
+     // Mutation for DELETING a task
+    const deleteTaskMutation = useMutation<ApiResponse, Error, string>({
+        mutationFn: (id) =>
+            fetch(`/api/prep-tasks/${id}`, {
+                method: 'DELETE',
+            }).then(res => res.json()).then(apiRes => {
+                if (!apiRes.success) throw new Error(apiRes.error || "Failed to delete task");
+                return apiRes;
+            }),
+        onSuccess: () => {
+            queryClientInstance.invalidateQueries({ queryKey: ['allPrepTasks'] });
+            notifications.show({
+                title: 'Tarefa Excluída',
+                message: 'A tarefa de preparo foi excluída com sucesso.',
+                color: 'green',
+            });
+        },
+        onError: (error) => {
+            notifications.show({
+                title: 'Erro ao excluir tarefa',
+                message: error.message,
+                color: 'red',
+            });
+        },
+    });
+
+
+    // --- Handlers ---
+    
+    // Handler for status changes that don't need a modal (e.g., Cancel)
+    const handleStatusUpdate = (id: string, newStatus: string) => {
+        if (newStatus === 'COMPLETED') {
+             notifications.show({
+                title: 'Aviso',
+                message: 'A conclusão deve ser feita pela tela "Minhas Tarefas" pelo usuário atribuído.',
+                color: 'orange',
+            });
+            return;
+        }
+         updateTaskMutation.mutate({ id, status: newStatus });
+    };
+
+    // Handler for opening the assign modal
+    const handleAssignClick = (task: SerializedPrepTask) => {
         setTaskToAssign(task);
         openAssignModal();
-    }
+    };
 
-    const handleAssignTask = (userId: string | null) => {
+     // Handler for submitting assignment from modal
+    const handleAssignSubmit = (assignedToUserId: string | null) => {
         if (taskToAssign) {
-            assignTaskMutation.mutate({ taskId: taskToAssign.id, userId: userId });
+            updateTaskMutation.mutate({
+                id: taskToAssign.id,
+                status: assignedToUserId ? 'ASSIGNED' : 'PENDING', // If null, unassign
+                data: { assignedToUserId }
+            });
         }
-        closeAssignModal();
-    }
+    };
 
-    const handleTaskCreated = () => {
-        closeCreateModal();
-        refetch(); // Refresh list after creating
-    }
+    // Handler for delete
+    const handleDeleteClick = (id: string) => {
+        deleteTaskMutation.mutate(id);
+    };
+    
+    // ---- START FIX: Update handler signature ----
+    const handleCreateSubmit = (values: { 
+        prepRecipeId: string | null;
+        targetQuantity: string;
+        locationId: string | null;
+        assignedToUserId: string | null;
+        notes: string;
+     }) => {
+    // ---- END FIX ----
+        createTaskMutation.mutate(values);
+    };
 
-
-    const isLoading = isLoadingTasks || isLoadingStaff || isLoadingRecipes || isLoadingLocations;
 
     return (
         <>
-            <Container fluid>
-                <Stack gap="lg">
-                    <PageHeader title="Gerenciar Tarefas de Preparo" />
-
-                     <Group justify="space-between">
-                         <SegmentedControl
-                            value={filter}
-                            onChange={(value) => setFilter(value as TaskMgmtFilter)}
-                            data={[
-                                { label: 'Pendentes', value: 'pending' },
-                                { label: 'Atribuídas', value: 'assigned' },
-                                { label: 'Em Progresso', value: 'inprogress' },
-                                { label: 'Recentes', value: 'recent' }, // Completed/Cancelled
-                            ]}
-                            color="blue"
+            <PageHeader 
+                title="Gerenciar Preparos"
+                actionButton={
+                    <Group>
+                        <SegmentedControl
+                            value={statusFilter}
+                            onChange={setStatusFilter}
+                            data={statusFilters}
                         />
-                         <Button
-                            leftSection={<IconPlus size={14} />}
-                            onClick={openCreateModal}
-                            disabled={isLoading || !prepRecipes || prepRecipes.length === 0 || !locations || locations.length === 0}
-                        >
-                            Criar Nova Tarefa
+                         <Button onClick={openCreateModal} leftSection={<IconToolsKitchen2 size={16} />}>
+                            Nova Tarefa
                         </Button>
                     </Group>
+                }
+            />
+            
+            <Box style={{ position: 'relative' }}>
+                <LoadingOverlay visible={isLoading} zIndex={1000} overlayProps={{ radius: "sm", blur: 2 }} />
+                
+                {error && (
+                    <Alert 
+                        color="red" 
+                        title="Erro ao carregar tarefas" 
+                        icon={<IconAlertCircle />} 
+                        withCloseButton 
+                        onClose={() => queryClientInstance.resetQueries()}
+                    >
+                        {error instanceof Error ? error.message : "Ocorreu um erro desconhecido."}
+                    </Alert>
+                )}
 
-
-                    {isLoading && !tasks && <Center h={200}><Loader /></Center>}
-                    {isError && (
-                        <Alert title="Erro ao Carregar Tarefas" color="red" icon={<IconAlertCircle />}>
-                            {(error as Error)?.message}
-                        </Alert>
-                    )}
-                     {!isLoading && (!prepRecipes || prepRecipes.length === 0) && (
-                          <Alert title="Atenção" color="orange" icon={<IconAlertCircle />}>
-                            Nenhuma Receita de Preparo definida. Crie receitas antes de criar tarefas.
-                        </Alert>
-                     )}
-                      {!isLoading && (!locations || locations.length === 0) && (
-                          <Alert title="Atenção" color="orange" icon={<IconAlertCircle />}>
-                            Nenhum Local de Estoque/Produção definido. Crie locais na tela de Planta & Mesas.
-                        </Alert>
-                     )}
-
-                    {!isLoading && tasks?.length === 0 && (
-                        <Text c="dimmed" ta="center" mt="xl">Nenhuma tarefa encontrada para este filtro.</Text>
-                    )}
-
-                    {tasks && tasks.length > 0 && (
-                        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-                           {tasks.map((task) => {
-                               let cardActions: React.ReactNode = null;
-                               if (task.status === PrepTaskStatus.PENDING) {
-                                   cardActions = <Button size="xs" onClick={() => handleOpenAssignModal(task)} disabled={!staffList || staffList.length === 0}>Atribuir</Button>;
-                               } else if (task.status === PrepTaskStatus.ASSIGNED) {
-                                   cardActions = <Button size="xs" variant="outline" color="gray" onClick={() => handleOpenAssignModal(task)}>Reatribuir</Button>;
-                               }
-                               // In Progress, Completed, Cancelled don't have manager actions here (maybe Cancel later)
-
-                               return (
-                                   <WorkflowCard
-                                       key={task.id}
-                                       cardId={task.id}
-                                       title={task.prepRecipe.name}
-                                       status={task.status}
-                                       assignedTo={task.assignedTo}
-                                       estimatedTime={task.prepRecipe.estimatedLaborTime}
-                                        details={
-                                           <Stack gap={2}>
-                                               <Text size="sm">
-                                                   Meta: <Text span fw={500}>{task.targetQuantity} {task.prepRecipe.outputIngredient.unit}</Text> de <Text span fw={500}>{task.prepRecipe.outputIngredient.name}</Text>
-                                               </Text>
-                                               <Text size="xs" c="dimmed">Local: {task.location.name}</Text>
-                                               {task.notes && <Text size="xs" c="dimmed">Notas: {task.notes}</Text>}
-                                               {task.status === PrepTaskStatus.COMPLETED && task.quantityRun !== null && (
-                                                   <Text size="xs" c="dimmed">Produzido: {task.quantityRun} {task.prepRecipe.outputIngredient.unit}</Text>
-                                               )}
-                                                {task.status === PrepTaskStatus.COMPLETED && task.executedBy && (
-                                                   <Text size="xs" c="dimmed">Por: {task.executedBy.name}</Text>
-                                               )}
-                                           </Stack>
-                                       }
-                                       actions={cardActions}
-                                   />
-                               );
-                           })}
-                        </SimpleGrid>
-                    )}
-
-                </Stack>
-            </Container>
+                {!isLoading && !error && (
+                    <>
+                        {tasks && tasks.length > 0 ? (
+                            <Grid>
+                                {tasks.map(task => (
+                                    <Grid.Col span={{ base: 12, sm: 6, md: 4 }} key={task.id}>
+                                        <WorkflowCard
+                                            key={task.id}
+                                            task={task}
+                                            onUpdateStatus={handleStatusUpdate}
+                                            onAssign={handleAssignClick}
+                                            onDelete={handleDeleteClick}
+                                        />
+                                    </Grid.Col>
+                                ))}
+                            </Grid>
+                        ) : (
+                            <Text ta="center" c="dimmed" mt="xl">
+                                Nenhuma tarefa encontrada para este filtro.
+                            </Text>
+                        )}
+                    </>
+                )}
+            </Box>
 
             {/* Modals */}
-             <CreatePrepTaskModal
-                opened={createModalOpened}
-                onClose={closeCreateModal}
-                onSuccess={handleTaskCreated}
-                recipes={prepRecipes ?? []}
-                locations={locations ?? []}
-                staff={staffList ?? []}
-            />
-
             <AssignTaskModal
                 opened={assignModalOpened}
                 onClose={closeAssignModal}
-                onAssign={handleAssignTask}
-                staffList={staffList ?? []}
+                staffList={staffList || []}
+                onAssign={handleAssignSubmit}
                 task={taskToAssign}
             />
+            
+            {/* ---- START FIX: Pass correct props ---- */}
+            <CreatePrepTaskModal
+                opened={createModalOpened}
+                onClose={closeCreateModal}
+                onSubmit={handleCreateSubmit}
+                isLoading={createTaskMutation.isPending}
+                recipes={prepRecipes || []}
+                locations={storageLocations || []}
+                staff={staffList || []}
+            />
+            {/* ---- END FIX ---- */}
         </>
+    );
+}
+
+// Export the page wrapped in the QueryClientProvider
+export default function PrepManagementPage() {
+    return (
+        <QueryClientProvider client={queryClient}>
+            <PrepManagementContent />
+        </QueryClientProvider>
     );
 }

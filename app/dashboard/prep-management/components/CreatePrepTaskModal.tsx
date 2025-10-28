@@ -4,27 +4,36 @@
 import { useState, useEffect } from "react";
 import { Modal, Button, Stack, LoadingOverlay, Select, NumberInput, Textarea } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
-import { ApiResponse, SerializedPrepRecipe, StorageLocation, UserWithWorkstation } from "@/lib/types";
+import { SerializedPrepRecipe, StorageLocation, UserWithWorkstation } from "@/lib/types";
 
+// --- START FIX: Update props ---
 interface CreatePrepTaskModalProps {
     opened: boolean;
     onClose: () => void;
-    onSuccess: () => void;
+    // onSubmit now takes the form values
+    onSubmit: (values: {
+        prepRecipeId: string | null;
+        targetQuantity: string;
+        locationId: string | null;
+        assignedToUserId: string | null;
+        notes: string;
+    }) => void; 
+    isLoading: boolean; // Renamed from isSubmitting
     recipes: SerializedPrepRecipe[];
     locations: StorageLocation[];
     staff: UserWithWorkstation[];
 }
+// --- END FIX ---
 
 export function CreatePrepTaskModal({
     opened,
     onClose,
-    onSuccess,
+    onSubmit, // Use onSubmit
+    isLoading, // Use isLoading
     recipes,
     locations,
     staff,
 }: CreatePrepTaskModalProps) {
-    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const form = useForm({
         initialValues: {
@@ -44,7 +53,7 @@ export function CreatePrepTaskModal({
         },
     });
 
-    // Reset form when modal closes or opens
+    // Reset form when modal closes
     useEffect(() => {
         if (!opened) {
             form.reset();
@@ -52,47 +61,29 @@ export function CreatePrepTaskModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [opened]);
 
-    const handleSubmit = async (values: typeof form.values) => {
-        setIsSubmitting(true);
-        const payload = {
-            ...values,
-            targetQuantity: values.targetQuantity, // API expects string or number
-        };
-
-        try {
-            const response = await fetch("/api/prep-tasks", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            const data: ApiResponse = await response.json();
-
-            if (response.ok && data.success) {
-                notifications.show({ title: "Sucesso", message: "Tarefa de preparo criada!", color: "green" });
-                onSuccess();
-            } else {
-                notifications.show({ title: "Erro", message: data.error || "Falha ao criar tarefa", color: "red" });
-            }
-        } catch (error: any) {
-            notifications.show({ title: "Erro", message: error.message || "Erro inesperado", color: "red" });
-        } finally {
-            setIsSubmitting(false);
-        }
+    // --- START FIX: Simplified handleSubmit ---
+    const handleSubmit = (values: typeof form.values) => {
+        onSubmit(values); // Just pass values to parent
     };
+    // --- END FIX ----
+
+    // --- Removed internal API call logic ---
 
     const recipeOptions = recipes.map(r => ({
         value: r.id,
-        label: `${r.name} (Produz ${r.outputQuantity} ${r.outputIngredient.unit} ${r.outputIngredient.name})`
+        // --- FIX: Check for null outputIngredient ---
+        label: `${r.name} (Produz ${r.outputQuantity} ${r.outputIngredient?.unit ?? 'UN'} ${r.outputIngredient?.name ?? ''})`
     }));
     const locationOptions = locations.map(l => ({ value: l.id, label: l.name }));
     const staffOptions = [{value: '', label: 'Não atribuir (Pendente)'}, ...staff.map(s => ({ value: s.id, label: s.name }))];
 
     const selectedRecipe = recipes.find(r => r.id === form.values.prepRecipeId);
-    const outputUnit = selectedRecipe?.outputIngredient.unit ?? 'UN';
+    // --- FIX: Check for null outputIngredient ---
+    const outputUnit = selectedRecipe?.outputIngredient?.unit ?? 'UN';
 
     return (
         <Modal opened={opened} onClose={onClose} title="Criar Nova Tarefa de Preparo" size="lg">
-            <LoadingOverlay visible={isSubmitting} />
+            <LoadingOverlay visible={isLoading} />
             <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack>
                     <Select
@@ -138,7 +129,7 @@ export function CreatePrepTaskModal({
                         minRows={2}
                     />
 
-                    <Button type="submit" mt="md" loading={isSubmitting}>
+                    <Button type="submit" mt="md" loading={isLoading}>
                         Criar Tarefa
                     </Button>
                 </Stack>
