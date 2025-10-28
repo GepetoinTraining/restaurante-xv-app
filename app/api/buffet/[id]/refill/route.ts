@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { BuffetPan, StockHolding, Prisma } from "@prisma/client";
+import { ServingPan, StockHolding, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
 type RouteParams = {
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             }
 
             // 3. Update BuffetPan quantity
-            return await tx.buffetPan.update({
+            return await tx.ServingPan.update({
                 where: { id: panId },
                 data: {
                     currentQuantity: {
