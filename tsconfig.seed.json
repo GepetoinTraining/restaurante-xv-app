@@ -2,13 +2,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "CommonJS", // Keep CommonJS for Node execution
-    "outDir": "./prisma", // Output JS file next to TS file (or a dedicated build dir)
-    "rootDir": "./prisma", // Specify root to include only prisma files if needed
-    "noEmit": false, // *** IMPORTANT: Allow emitting JS ***
-    "isolatedModules": false, // May be needed when emitting files
-    "sourceMap": false // Optional: disable sourcemaps for seed script
-    // Remove "target" if inheriting from main tsconfig is sufficient
+    "module": "CommonJS",                  // Keep CommonJS for Node execution
+    "moduleResolution": "Node",           // Override to be compatible with CommonJS
+    "outDir": "./prisma",                 // Output JS file next to TS file
+    "rootDir": "./prisma",                // Specify root to include only prisma files
+    "noEmit": false,                      // Allow emitting JS
+    "isolatedModules": false,             // Required when emitting files like this
+    "sourceMap": false                    // Disable sourcemaps for seed script
+    // Remove "target" if inheriting is okay
   },
-  "include": ["prisma/seed.ts"] // Only compile the seed file with this config
+  // Make include path explicitly relative
+  "include": ["./prisma/seed.ts"]
 }
