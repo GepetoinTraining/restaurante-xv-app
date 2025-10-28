@@ -1,0 +1,797 @@
+// PATH: prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ========================================
+// Authentication & Authorization
+// ========================================
+
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String
+  email     String   @unique
+  pin       String // Hashed PIN
+  role      Role     @default(SERVER)
+  isActive  Boolean  @default(true)
+
+  // Relations
+  assignedWorkstations StaffAssignment[] // Which workstation(s) the staff member is assigned to
+  ordersHandled      StaffOrderAssignment[] // Orders handled by this staff
+  prepTasksExecuted  PrepTask[]             @relation("ExecutedBy") // Tasks marked complete by this user
+  prepTasksAssigned  PrepTask[]             @relation("AssignedTo") // Tasks assigned to this user
+  platesWeighed      ClientPlate[]          @relation("WeighedBy") // Plates weighed by this staff member
+  wasteRecorded      WasteRecord[]          @relation("RecordedBy") // Waste recorded by this staff member
+  transactionsApproved WalletTransaction[]    @relation("ApprovedBy") // Transactions approved by this staff member
+  callsAcknowledged  ServerCall[]           @relation("AcknowledgedCalls") // Added opposite field
+  callsResolved      ServerCall[]           @relation("ResolvedCalls") // Added opposite field
+
+  @@map("users") // Explicitly map to 'users' table if needed
+}
+
+enum Role {
+  SERVER
+  BARTENDER
+  COOK
+  CASHIER
+  DJ
+  MANAGER
+  OWNER
+}
+
+// ========================================
+// Client & Visit Management
+// ========================================
+
+model Client {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String
+  phone     String   @unique // Assuming phone is unique identifier
+  email     String?  @unique
+  cpf       String?  @unique
+  notes     String?
+
+  // Relations
+  visits        Visit[]
+  wallet        ClientWallet? // One-to-one with ClientWallet
+  plates        ClientPlate[] // Plates associated with the client
+  transactions  WalletTransaction[] @relation("ClientTransactions") // Direct link to transactions
+
+  @@map("clients")
+}
+
+model ClientWallet {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  clientId  String   @unique // One-to-one relation with Client
+  balance   Decimal  @default(0.00) @db.Decimal(10, 2)
+
+  // Relations
+  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  transactions  WalletTransaction[] @relation("WalletTransactions") // Transactions belonging to this wallet
+
+  @@map("client_wallets")
+}
+
+enum TransactionType {
+  TOP_UP // Adding credit
+  SPEND  // Spending credit (e.g., paying for an order - implement later)
+  REFUND // Refunding credit
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model WalletTransaction {
+  id          String            @id @default(cuid())
+  createdAt   DateTime          @default(now())
+  walletId    String            // Belongs to which wallet
+  clientId    String            // Belongs to which client (redundant but useful for querying)
+  amount      Decimal           @db.Decimal(10, 2) // Positive for top-up/refund, negative for spend
+  type        TransactionType
+  status      TransactionStatus
+  proofOfPay  String?           // e.g., Pix ID, receipt number, "Manual Staff Entry"
+  notes       String?
+  approvedById String?          // Staff user who approved/completed (if applicable)
+  approvedAt  DateTime?
+
+  // Relations
+  wallet      ClientWallet @relation("WalletTransactions", fields: [walletId], references: [id], onDelete: Cascade)
+  client      Client       @relation("ClientTransactions", fields: [clientId], references: [id], onDelete: Cascade)
+  approvedBy  User?        @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([clientId, createdAt])
+  @@map("wallet_transactions")
+}
+
+
+model Visit {
+  id           String    @id @default(cuid())
+  checkInAt    DateTime  @default(now())
+  checkOutAt   DateTime?
+  totalSpent   Decimal   @default(0.00) @db.Decimal(10, 2)
+  notes        String?
+  status       VisitStatus @default(ACTIVE) // Track visit status
+
+  // Relations
+  clientId     String
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tabId        String?   // If using RFID tabs
+  tab          Tab?      @relation(fields: [tabId], references: [id], onDelete: SetNull)
+  venueObjectId String?  // Where the client is seated/checked-in (Table, Bar Seat, etc.)
+  venueObject  VenueObject? @relation(fields: [venueObjectId], references: [id], onDelete: SetNull)
+  orders       Order[]
+  plates       ClientPlate[] // Plates created during this visit
+  serverCalls  ServerCall[] // Added opposite field
+
+  @@index([clientId])
+  @@index([tabId])
+  @@index([venueObjectId])
+  @@index([status, checkInAt])
+  @@map("visits")
+}
+
+enum VisitStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+model Tab {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  rfid      String   @unique // The RFID code
+  isActive  Boolean  @default(true)
+  notes     String?
+
+  // Relations
+  visits    Visit[] // History of visits using this tab
+
+  @@map("tabs")
+}
+
+// ========================================
+// Venue Layout & Objects
+// ========================================
+
+model FloorPlan {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  name        String   @unique // e.g., "Main Floor", "Rooftop"
+  description String?
+  imageUrl    String?  // Optional background image for visualization
+  width       Int      // Width in grid units or pixels
+  height      Int      // Height in grid units or pixels
+
+  // Relations
+  objects     VenueObject[] // Objects placed on this floor plan
+
+  @@map("floor_plans")
+}
+
+model VenueObject {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  name            String   // e.g., "Table 10", "Bar Seat 3", "Kitchen Pass"
+  type            VenueObjectType
+  floorPlanId     String
+  anchorX         Float    // Position X (percentage or pixels)
+  anchorY         Float    // Position Y (percentage or pixels)
+  width           Float?   // Optional size for visualization
+  height          Float?   // Optional size for visualization
+  rotation        Float?   // Optional rotation for visualization
+  capacity        Int?     // e.g., Seats at a table/bar
+  isReservable    Boolean  @default(false)
+  reservationCost Decimal? @db.Decimal(10, 2)
+  qrCodeId        String?  @unique // Unique ID linked to a physical QR code for menus/calls
+  notes           String?
+
+  // Relations
+  floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  workstationId String?   // Link if this object *represents* a workstation
+  workstation   Workstation? @relation(fields: [workstationId], references: [id], onDelete: SetNull)
+  visits      Visit[]   // Visits currently associated with this object (usually 1 for tables/seats)
+  stockHoldings StockHolding[] @relation("LocationStock") // Stock stored AT this location
+  prepTasks     PrepTask[] @relation("PrepLocation") // Prep tasks performed/stored here
+  staffAssignments StaffAssignment[] // Staff assigned TO this object (e.g., POS terminal)
+  serverCalls ServerCall[] // Calls originating from this location
+
+  @@index([floorPlanId])
+  @@index([workstationId])
+  @@map("venue_objects")
+}
+
+enum VenueObjectType {
+  TABLE               // Customer seating table
+  BAR_SEAT            // Customer seating at the bar
+  WORKSTATION         // Staff operational station (POS, Kitchen Display) - Links to Workstation model
+  WORKSTATION_STORAGE // Storage directly associated with a workstation (e.g., under-counter fridge)
+  STORAGE             // General storage area (pantry, walk-in)
+  FREEZER             // Specific freezer storage
+  SHELF               // Specific shelf storage
+  ENTERTAINMENT       // Stage, DJ booth, etc.
+  IMPASSABLE          // Wall, column, decorative element for layout
+  DOOR
+  WINDOW
+  OTHER
+}
+
+model Workstation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String   @unique // e.g., "Main POS", "Kitchen Printer", "Bar Display"
+  type      WorkstationType @default(POS)
+  ipAddress String?  // For network devices like printers/displays
+  notes     String?
+
+  // Relations
+  venueObject VenueObject[] // The physical representation(s) on the floor plan
+  products    Product[]     // Products prepared/handled at this station
+  orders      OrderItem[]   // Order items routed to this workstation
+
+  @@map("workstations")
+}
+
+enum WorkstationType {
+  POS       // Point of Sale terminal
+  KDS       // Kitchen Display System
+  PRINTER   // Receipt or order printer
+  BAR_DISPLAY // Display for bar staff
+  OTHER
+}
+
+// Join table for Staff assigned to specific VenueObjects (like a POS terminal)
+model StaffAssignment {
+  id            String   @id @default(cuid())
+  assignedAt    DateTime @default(now())
+  userId        String
+  venueObjectId String   // Which VenueObject (often a WORKSTATION type)
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueObject VenueObject @relation(fields: [venueObjectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, venueObjectId]) // A user can be assigned to an object only once at a time?
+  @@map("staff_assignments")
+}
+
+
+// ========================================
+// Menu, Products, Recipes
+// ========================================
+
+model Product {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  name          String   @unique
+  description   String?
+  imageUrl      String?
+  price         Decimal  @db.Decimal(10, 2)
+  type          ProductType // e.g., FOOD, DRINK
+  isActive      Boolean  @default(true) // If available on menu
+  prepStationId String   // Which Workstation prepares this?
+
+  // Relations
+  prepStation Workstation @relation(fields: [prepStationId], references: [id])
+  orderItems  OrderItem[]
+  recipe      Recipe?     // One-to-one relation with Recipe
+  wasteRecords WasteRecord[] // Added opposite field
+
+  @@index([prepStationId])
+  @@map("products")
+}
+
+enum ProductType {
+  FOOD
+  DRINK
+  OTHER
+}
+
+model Recipe {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  productId   String   @unique // One-to-one link to Product
+  notes       String?
+  difficulty  Int?     @default(1) // e.g., 1-5 scale
+
+  // Relations
+  product     Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredients RecipeIngredient[]
+  steps       RecipeStep[]
+
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id           String   @id @default(cuid())
+  recipeId     String
+  ingredientId String
+  quantity     Decimal  @db.Decimal(10, 4) // Quantity of the ingredient's base unit
+
+  // Relations
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict) // Prevent deleting ingredient if used
+
+  @@unique([recipeId, ingredientId])
+  @@map("recipe_ingredients")
+}
+
+model RecipeStep {
+  id          String   @id @default(cuid())
+  recipeId    String
+  stepNumber  Int
+  instruction String
+
+  // Relations
+  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, stepNumber])
+  @@map("recipe_steps")
+}
+
+
+// ========================================
+// Inventory & Preparation
+// ========================================
+
+model Ingredient {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  name         String   @unique
+  unit         String   // Base unit (e.g., 'g', 'ml', 'unidade')
+  costPerUnit  Decimal  @db.Decimal(10, 4) // Cost of one base unit
+  isPrepared   Boolean  @default(false) // Is this made internally via a PrepRecipe?
+
+  // Relations
+  stockHoldings     StockHolding[]
+  recipeIngredients RecipeIngredient[] // Used in product recipes
+  prepRecipeInputs  PrepRecipeInput[]  // Used as input in prep recipes
+  prepRecipeOutput  PrepRecipe[]       @relation("OutputIngredient") // Is the output of prep recipes
+  wasteRecords      WasteRecord[]      // Ingredient wasted
+  buffetPans        BuffetPan[]        // Added opposite field
+
+  @@map("ingredients")
+}
+
+model StockHolding {
+  id                String    @id @default(cuid())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  ingredientId      String
+  venueObjectId     String    // Where is this batch stored?
+  quantity          Decimal   @db.Decimal(10, 4) // Current quantity in base units
+  purchaseDate      DateTime? // Date acquired or produced
+  expiryDate        DateTime?
+  costAtAcquisition Decimal?  @db.Decimal(10, 4) // Cost per unit when this batch was acquired/produced
+
+  // Relations
+  ingredient Ingredient  @relation(fields: [ingredientId], references: [id], onDelete: Restrict) // Prevent deleting ingredient if stock exists
+  location   VenueObject @relation("LocationStock", fields: [venueObjectId], references: [id], onDelete: Cascade) // If location is deleted, stock is gone
+  wasteRecords WasteRecord[] // Added opposite field
+
+  @@index([ingredientId])
+  @@index([venueObjectId])
+  @@index([expiryDate])
+  @@map("stock_holdings")
+}
+
+model PrepRecipe {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  name               String   @unique
+  outputIngredientId String   // The Ingredient produced
+  outputQuantity     Decimal  @db.Decimal(10, 4) // How much is produced in one run
+  notes              String?
+  estimatedLaborTime Int?     // Estimated time in minutes
+
+  // Relations
+  outputIngredient Ingredient        @relation("OutputIngredient", fields: [outputIngredientId], references: [id], onDelete: Restrict)
+  inputs           PrepRecipeInput[]
+  tasks            PrepTask[] // History of tasks run for this recipe
+
+  @@map("prep_recipes")
+}
+
+model PrepRecipeInput {
+  id           String   @id @default(cuid())
+  prepRecipeId String
+  ingredientId String
+  quantity     Decimal  @db.Decimal(10, 4) // How much input needed per run
+
+  // Relations
+  prepRecipe   PrepRecipe @relation(fields: [prepRecipeId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([prepRecipeId, ingredientId])
+  @@map("prep_recipe_inputs")
+}
+
+model PrepTask {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now()) // When task was created
+  prepRecipeId    String
+  targetQuantity  Decimal        @db.Decimal(10, 4) // Desired output quantity
+  quantityRun     Decimal?       @db.Decimal(10, 4) // Actual output quantity (set on completion)
+  status          PrepTaskStatus @default(PENDING)
+  assignedToUserId String?       // Who is assigned to do it
+  assignedAt      DateTime?      // When it was assigned
+  startedAt       DateTime?      // When work began
+  completedAt     DateTime?      // When work finished
+  executedById    String?        // Who actually completed it
+  locationId      String         // Where the prep happened / output is stored
+  notes           String?
+
+  // Relations
+  prepRecipe   PrepRecipe  @relation(fields: [prepRecipeId], references: [id], onDelete: Restrict)
+  assignedTo   User?       @relation("AssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  executedBy   User?       @relation("ExecutedBy", fields: [executedById], references: [id], onDelete: SetNull)
+  location     VenueObject @relation("PrepLocation", fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([assignedToUserId])
+  @@index([prepRecipeId])
+  @@index([locationId])
+  @@map("prep_tasks")
+}
+
+enum PrepTaskStatus {
+  PENDING     // Needs assignment or claiming
+  ASSIGNED    // Assigned to a specific user
+  IN_PROGRESS // Actively being worked on
+  COMPLETED   // Finished, stock adjusted
+  CANCELLED   // Cancelled before completion
+  PROBLEM     // Halted due to an issue (e.g., missing ingredient)
+}
+
+
+// ========================================
+// Orders & POS
+// ========================================
+
+model Order {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  visitId   String
+  clientId  String   // Denormalized for easier querying
+  total     Decimal  @db.Decimal(10, 2)
+  status    OrderStatus @default(PENDING)
+  notes     String?
+
+  // Relations
+  visit       Visit                  @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  items       OrderItem[]
+  handledBy   StaffOrderAssignment[] // Which staff members handled this order
+
+  @@index([visitId])
+  @@index([clientId, createdAt])
+  @@index([status])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING     // Just created, not sent to prep
+  PREPARING   // Sent to prep station(s)
+  READY       // Ready for pickup/delivery
+  DELIVERED   // Delivered to customer
+  CANCELLED   // Order cancelled
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  productId     String
+  quantity      Int
+  unitPrice     Decimal  @db.Decimal(10, 2) // Price per unit at time of order
+  totalPrice    Decimal  @db.Decimal(10, 2) // quantity * unitPrice
+  status        OrderItemStatus @default(PENDING) // Status for this specific item
+  notes         String? // e.g., "No onions"
+  workstationId String   // Which workstation should prepare this?
+
+  // Relations
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict) // Don't delete product if ordered
+  workstation Workstation @relation(fields: [workstationId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([workstationId, status])
+  @@map("order_items")
+}
+
+enum OrderItemStatus {
+  PENDING   // Not yet acknowledged by workstation
+  PREPARING // Actively being prepared
+  READY     // Item finished, awaiting collection/delivery
+  DELIVERED // Item delivered
+  CANCELLED // Item cancelled
+}
+
+// Join table for staff handling an order (e.g., server taking order, cashier processing payment)
+model StaffOrderAssignment {
+  id        String   @id @default(cuid())
+  assignedAt DateTime @default(now())
+  role      String   // e.g., "SERVER", "CASHIER" - could be enum later
+  userId    String
+  orderId   String
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orderId, role])
+  @@map("staff_order_assignments")
+}
+
+
+// ========================================
+// Server Calls
+// ========================================
+
+model ServerCall {
+  id              String           @id @default(cuid())
+  createdAt       DateTime         @default(now())
+  venueObjectId   String           // Where the call originated (Table, Bar Seat)
+  visitId         String           // Which visit initiated the call
+  status          ServerCallStatus @default(PENDING)
+  acknowledgedById String?         // Staff user who acknowledged
+  acknowledgedAt  DateTime?
+  resolvedById    String?         // Staff user who resolved
+  resolvedAt      DateTime?
+  notes           String?
+
+  // Relations
+  venueObject     VenueObject @relation(fields: [venueObjectId], references: [id], onDelete: Cascade)
+  visit           Visit       @relation(fields: [visitId], references: [id], onDelete: Cascade) // Corrected relation field
+  acknowledgedBy  User?       @relation("AcknowledgedCalls", fields: [acknowledgedById], references: [id], onDelete: SetNull) // Corrected relation field
+  resolvedBy      User?       @relation("ResolvedCalls", fields: [resolvedById], references: [id], onDelete: SetNull) // Corrected relation field
+
+  @@index([status, createdAt])
+  @@map("server_calls")
+}
+
+enum ServerCallStatus {
+  PENDING      // Call initiated by client
+  ACKNOWLEDGED // Staff indicated they are responding
+  RESOLVED     // Staff indicated the request is handled
+  CANCELLED    // Call cancelled (e.g., client cancels, staff cancels)
+}
+
+
+// ========================================
+// Entertainment & Music (Optional Modules)
+// ========================================
+
+model Entertainer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String   @unique
+  type      EntertainerType
+  bio       String?
+  imageUrl  String?
+  rate      Decimal? @db.Decimal(10, 2) // Rate per event/hour?
+
+  // Relations
+  events    ScheduledEvent[]
+
+  @@map("entertainers")
+}
+
+enum EntertainerType {
+  DJ
+  BAND
+  SOLO_ARTIST
+  OTHER
+}
+
+model ScheduledEvent {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  entertainerId String
+  startTime     DateTime
+  endTime       DateTime
+  notes         String?
+  // Add booking status, payment status etc. if needed
+
+  // Relations
+  entertainer   Entertainer @relation(fields: [entertainerId], references: [id], onDelete: Cascade)
+  djSession     DJSession?  // Link to a DJ session if applicable
+
+  @@index([entertainerId])
+  @@index([startTime, endTime])
+  @@map("scheduled_events")
+}
+
+
+model VinylLibrarySlot {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  row       Int      // Shelf row
+  column    Int      // Shelf column
+  capacity  Int      // How many records fit
+
+  // Relations
+  records   VinylRecord[]
+
+  @@unique([row, column]) // Ensure unique slot positions
+  @@map("vinyl_library_slots")
+}
+
+model VinylRecord {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  title          String
+  artist         String
+  genre          String?
+  year           Int?
+  imageUrl       String?
+  notes          String?
+  slotId         String   // Which slot it belongs in
+  positionInSlot Int      // Position within the slot (1, 2, 3...)
+
+  // Relations
+  slot           VinylLibrarySlot @relation(fields: [slotId], references: [id], onDelete: Restrict) // Don't delete slot if records exist
+  tracksPlayed   DJSetTrack[]     // History of plays in DJ sets
+
+  @@index([slotId, positionInSlot])
+  @@index([artist, title])
+  @@map("vinyl_records")
+}
+
+
+model DJSession {
+  id              String   @id @default(cuid())
+  eventId         String   @unique // Link to the scheduled event
+  actualStartTime DateTime @default(now())
+  actualEndTime   DateTime?
+  notes           String?
+
+  // Relations
+  event           ScheduledEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tracksPlayed    DJSetTrack[]
+
+  @@map("dj_sessions")
+}
+
+model DJSetTrack {
+  id            String   @id @default(cuid())
+  djSessionId   String
+  vinylRecordId String
+  playedAt      DateTime @default(now())
+  notes         String?
+
+  // Relations
+  djSession     DJSession   @relation(fields: [djSessionId], references: [id], onDelete: Cascade)
+  vinylRecord   VinylRecord @relation(fields: [vinylRecordId], references: [id], onDelete: Restrict) // Don't delete record if played
+
+  @@index([djSessionId, playedAt])
+  @@map("dj_set_tracks")
+}
+
+
+// ========================================
+// NEW: Buffet & Weigh Station Models
+// ========================================
+
+model BuffetStation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String   @unique // e.g., "Salad Bar", "Hot Station 1"
+  notes     String?
+
+  // Relations
+  pans      BuffetPan[]
+
+  @@map("buffet_stations")
+}
+
+model BuffetPan {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  buffetStationId String
+  ingredientId    String?  // Which ingredient is currently in the pan (can be null if empty/unassigned)
+  currentQuantity Decimal  @default(0.0000) @db.Decimal(10, 4) // Current weight/volume in ingredient's base unit
+  capacity        Decimal  @db.Decimal(10, 4) // Max capacity of the pan in ingredient's base unit
+  displayOrder    Int?     // Optional order within the station
+  notes           String?
+
+  // Relations
+  buffetStation BuffetStation @relation(fields: [buffetStationId], references: [id], onDelete: Cascade)
+  ingredient    Ingredient?   @relation(fields: [ingredientId], references: [id], onDelete: SetNull) // Corrected relation field
+
+  @@index([buffetStationId])
+  @@index([ingredientId])
+  @@map("buffet_pans")
+}
+
+model ClientPlate {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  visitId           String
+  clientId          String   // Denormalized
+  weighedById       String   // User who operated the scale
+  totalWeightGrams  Decimal  @db.Decimal(10, 2) // Gross weight from scale
+  tareWeightGrams   Decimal  @db.Decimal(10, 2) // Tare weight of the plate used
+  netWeightGrams    Decimal  @db.Decimal(10, 2) // Net weight of food (total - tare)
+  calculatedCost    Decimal  @db.Decimal(10, 2) // Cost based on net weight and price/kg
+  imageUrl          String?  // Optional URL to image of the plate
+  estimatedContents Json?    // Optional: Store results from image analysis later
+  notes             String?
+
+  // Relations
+  visit             Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  weighedBy         User     @relation("WeighedBy", fields: [weighedById], references: [id], onDelete: Restrict)
+
+  @@index([visitId])
+  @@index([clientId, createdAt])
+  @@map("client_plates")
+}
+
+
+// ========================================
+// NEW: Waste Tracking Model
+// ========================================
+
+model WasteRecord {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  recordedById    String         // Staff user who recorded the waste
+  ingredientId    String?        // Wasted ingredient (if not a finished product)
+  productId       String?        // Wasted finished product (if applicable)
+  stockHoldingId  String?        // Specific batch wasted (optional but recommended)
+  quantity        Decimal        @db.Decimal(10, 4) // Amount wasted (in base unit of ingredient/product?)
+  unit            String         // Unit of the quantity (should match ingredient/product base unit)
+  reason          WasteReason    @default(SPOILAGE)
+  costValue       Decimal        @db.Decimal(10, 4) // Calculated cost of the wasted item(s)
+  notes           String?
+
+  // Relations
+  recordedBy      User         @relation("RecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+  ingredient      Ingredient?  @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  product         Product?     @relation(fields: [productId], references: [id], onDelete: SetNull) // Corrected relation field
+  stockHolding    StockHolding? @relation(fields: [stockHoldingId], references: [id], onDelete: SetNull) // Corrected relation field
+
+  @@index([createdAt])
+  @@index([ingredientId])
+  @@index([productId])
+  @@map("waste_records")
+}
+
+enum WasteReason {
+  SPOILAGE      // Expired, gone bad
+  PREPARATION   // Error during prep (burnt, dropped)
+  ACCIDENT      // Dropped, spilled (not during prep)
+  OVERPRODUCTION// Made too much
+  PORTIONING    // Trimmings, etc. (might be accounted for in recipes instead)
+  CUSTOMER_RETURN // Customer returned item (rare for buffet, maybe for orders)
+  OTHER
+}
