@@ -100,7 +100,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             }
 
             // 3. Update servingPan quantity
-            return await tx.ServingPan.update({
+            return await tx.servingPan.update({
                 where: { id: panId },
                 data: {
                     currentQuantity: {
