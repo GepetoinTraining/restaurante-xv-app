@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Login successful ---
+   
     const session = await getSession();
 
     // Save user data in the session

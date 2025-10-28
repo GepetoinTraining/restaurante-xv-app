@@ -3,21 +3,19 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-// --- START FIX: Import correct model names (ServingPan is capitalized) ---
+// --- FIX 1: Import correct model name (ServingPan is capitalized) ---
 import { BuffetStation, ServingPan, Ingredient, Prisma } from "@prisma/client";
-// --- END FIX ---
 import { Decimal } from "@prisma/client/runtime/library";
 
 // Define the expected response structure including pans and ingredients
 // Quantities and capacities will be serialized strings
 export type BuffetStationWithPans = BuffetStation & {
-    // --- START FIX: Use correct type 'ServingPan' and allow null capacity ---
+    // --- FIX 2: Use correct type 'ServingPan' and allow null capacity ---
     pans: (Omit<ServingPan, 'currentQuantity' | 'capacity'> & {
         currentQuantity: string;
         capacity: string | null; // Capacity can be null
-        ingredient: Pick<Ingredient, 'id' | 'name' | 'unit'> | null; // Include ingredient details
+        ingredient: Pick<Ingredient, 'id' | 'name' | 'unit'> | null;
     })[];
-    // --- END FIX ---
 };
 
 /**
@@ -35,7 +33,7 @@ export async function GET(req: NextRequest) {
             include: {
                 pans: {
                     include: {
-                        ingredient: { // Include ingredient details for each pan
+                        ingredient: {
                             select: {
                                 id: true,
                                 name: true,
@@ -43,26 +41,25 @@ export async function GET(req: NextRequest) {
                             },
                         },
                     },
+                    // --- FIX 3: Order by a field that exists on ServingPan ---
                     orderBy: {
-                        displayOrder: 'asc', // Or order by name, etc.
+                        uniqueIdentifier: 'asc', // Sort by identifier
                     },
                 },
             },
             orderBy: {
-                name: 'asc',
+                displayOrder: 'asc', // This one is correct (for the stations)
             },
         });
 
-        // Serialize Decimal fields (currentQuantity, capacity)
+        // Serialize Decimal fields
         const serializedStations: BuffetStationWithPans[] = stations.map(station => ({
             ...station,
             pans: station.pans.map(pan => ({
                 ...pan,
                 currentQuantity: pan.currentQuantity.toString(),
-                // --- START FIX: Check for null capacity before serializing ---
+                // --- FIX 4: Check for null capacity before serializing ---
                 capacity: pan.capacity !== null ? pan.capacity.toString() : null,
-                // --- END FIX ---
-                // Ingredient is already selected, no decimals there
             })),
         }));
 
@@ -73,7 +70,6 @@ export async function GET(req: NextRequest) {
         );
     } catch (error) {
         console.error("Error fetching buffet stations:", error);
-        // Catch specific Prisma errors if model doesn't exist yet
         if (error instanceof Prisma.PrismaClientInitializationError || (error instanceof Error && error.message.includes("model"))){
              return NextResponse.json<ApiResponse>(
                 { success: false, error: "Erro: Modelos de Buffet não encontrados no schema Prisma. Execute as migrações." },
