@@ -12,7 +12,7 @@ import {
 type StatCardProps = {
   title: string;
   value: string;
-  icon: "dollar" | "average" | "visits" | "staff" | "product";
+  icon: "dollars" | "average" | "visits" | "staff" | "product";
 };
 
 const icons = {
