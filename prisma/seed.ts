@@ -58,7 +58,7 @@ async function main() {
   // 2. --- Core Setup (Users, Workstations, Locations, Vehicles) ---
   console.log("Seeding core setup...");
 
-  const hashedPin = await bcrypt.hash("1234", 10);
+  const hashedPin = await bcrypt.hash("123456", 10);
   const owner = await prisma.user.create({
     data: {
       name: "Ana Proprietária",
