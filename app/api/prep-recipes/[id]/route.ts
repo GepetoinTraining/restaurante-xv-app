@@ -16,7 +16,7 @@ type PrepRecipeUpdateInput = {
     outputIngredientId?: string;
     outputQuantity?: string | number;
     notes?: string;
-    estimatedLaborTime?: number;
+    estimatedLaborTime?: number | null; // Allow null
     // Inputs need special handling (delete old, create new)
     inputs?: {
         ingredientId: string;
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         const serializedRecipe = {
             ...prepRecipe,
             outputQuantity: prepRecipe.outputQuantity.toString(),
+            estimatedLaborTime: prepRecipe.estimatedLaborTime, // Keep as number or null
             inputs: prepRecipe.inputs.map(inp => ({
                 ...inp,
                 quantity: inp.quantity.toString(),
@@ -83,7 +84,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     // TODO: Define appropriate roles (MANAGER, OWNER, COOK?)
-    if (!session.user?.isLoggedIn) {
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER', 'COOK'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
     const id = params.id;
@@ -92,11 +93,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         const body: PrepRecipeUpdateInput = await req.json();
         const { name, outputIngredientId, outputQuantity, notes, estimatedLaborTime, inputs } = body;
 
+        // Check if recipe exists before attempting update
+        const existingRecipe = await prisma.prepRecipe.findUnique({ where: { id }});
+        if (!existingRecipe) {
+             return NextResponse.json<ApiResponse>({ success: false, error: "Receita de preparo não encontrada." }, { status: 404 });
+        }
+
+
         const updateData: Prisma.PrepRecipeUpdateArgs['data'] = {};
 
         if (name !== undefined) updateData.name = name;
         if (notes !== undefined) updateData.notes = notes;
-        if (estimatedLaborTime !== undefined) updateData.estimatedLaborTime = estimatedLaborTime;
+        if (estimatedLaborTime !== undefined) updateData.estimatedLaborTime = estimatedLaborTime; // Allow null
 
         // Validate output quantity if provided
         if (outputQuantity !== undefined) {
@@ -140,42 +148,53 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                     if (inputQuantityDecimal.isNegative() || inputQuantityDecimal.isZero()) {
                         throw new Error(`Quantidade para o ingrediente ID ${input.ingredientId} deve ser positiva.`);
                     }
+                    // Check if input ingredient exists before adding
+                    const ingredientExists = await prisma.ingredient.findUnique({ where: { id: input.ingredientId }});
+                    if (!ingredientExists) {
+                        throw new Error(`Ingrediente de entrada com ID ${input.ingredientId} não encontrado.`);
+                    }
                     inputsToCreate.push({
                         ingredientId: input.ingredientId,
                         quantity: inputQuantityDecimal,
                     });
                 } catch (e: any) {
-                    return NextResponse.json<ApiResponse>({ success: false, error: `Quantidade de entrada inválida: ${e.message}` }, { status: 400 });
+                    return NextResponse.json<ApiResponse>({ success: false, error: `Ingrediente de entrada inválido: ${e.message}` }, { status: 400 });
                 }
              }
         }
 
-        // Perform update in transaction if inputs are changing
+        // Perform update in transaction
         const updatedPrepRecipe = await prisma.$transaction(async (tx) => {
+            // First, update the main PrepRecipe fields (excluding inputs relation)
+            const recipeUpdate = await tx.prepRecipe.update({
+                where: { id },
+                data: updateData, // Apply basic field updates
+            });
+
+            // If inputs were provided in the payload, replace them
             if (inputsToCreate) {
                 // Delete existing inputs for this recipe
                 await tx.prepRecipeInput.deleteMany({
                     where: { prepRecipeId: id }
                 });
-                // Update recipe and create new inputs
-                return await tx.prepRecipe.update({
-                    where: { id },
-                    data: {
-                        ...updateData,
-                        inputs: {
-                            createMany: { data: inputsToCreate }
-                        }
-                    },
-                     include: { inputs: { include: { ingredient: { select: { name: true, unit: true }}}}, outputIngredient: { select: { name: true, unit: true }} } // Include for response
+                // Create the new inputs
+                await tx.prepRecipeInput.createMany({
+                    data: inputsToCreate.map(inp => ({
+                        prepRecipeId: id, // Link to the recipe ID
+                        ingredientId: inp.ingredientId,
+                        quantity: inp.quantity
+                    }))
                 });
-            } else {
-                 // Only update basic fields, no input changes
-                 return await tx.prepRecipe.update({
-                    where: { id },
-                    data: updateData,
-                    include: { inputs: { include: { ingredient: { select: { name: true, unit: true }}}}, outputIngredient: { select: { name: true, unit: true }} }
-                 });
             }
+
+            // Fetch the final updated recipe with includes for the response
+            return await tx.prepRecipe.findUniqueOrThrow({
+                where: { id },
+                 include: {
+                     inputs: { include: { ingredient: { select: { id: true, name: true, unit: true }}}},
+                     outputIngredient: { select: { id: true, name: true, unit: true }}
+                 }
+             });
         });
 
 
@@ -183,6 +202,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         const serializedRecipe = {
             ...updatedPrepRecipe,
             outputQuantity: updatedPrepRecipe.outputQuantity.toString(),
+            estimatedLaborTime: updatedPrepRecipe.estimatedLaborTime, // Keep as number or null
             inputs: updatedPrepRecipe.inputs.map(inp => ({
                 ...inp,
                 quantity: inp.quantity.toString(),
@@ -197,13 +217,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } catch (error: any) {
         console.error(`Error updating prep recipe ${id}:`, error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-             if (error.code === 'P2025') {
-                 return NextResponse.json<ApiResponse>({ success: false, error: "Receita de preparo não encontrada." }, { status: 404 });
+             if (error.code === 'P2025') { // Should be caught earlier, but good failsafe
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Receita de preparo ou ingrediente relacionado não encontrado." }, { status: 404 });
              }
              if (error.code === 'P2002' && error.meta?.target === 'PrepRecipe_name_key') {
                 return NextResponse.json<ApiResponse>({ success: false, error: "Já existe uma receita de preparo com este nome." }, { status: 409 });
             }
               if (error.code === 'P2003') { // FK constraint
+                // These should ideally be caught by existence checks before the transaction
                 if (error.meta?.field_name?.toString().includes('outputIngredientId')) {
                     return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente de saída não encontrado." }, { status: 404 });
                 }
@@ -212,8 +233,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                 }
             }
         }
+         // Catch specific errors thrown manually (e.g., input ingredient not found)
+        if (error.message.includes('não encontrado')) {
+             return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 404 });
+        }
+
         return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro interno do servidor ao atualizar receita de preparo" },
+            { success: false, error: `Erro interno do servidor ao atualizar receita de preparo: ${error.message}` },
             { status: 500 }
         );
     }
@@ -227,7 +253,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     // TODO: Define appropriate roles
-    if (!session.user?.isLoggedIn) {
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) { // Stricter roles for deletion
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
     const id = params.id;
@@ -243,7 +269,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
          }
 
 
-        // Deletion cascades to PrepRecipeInput via schema rule
+        // Deletion cascades to PrepRecipeInput via schema rule (onDelete: Cascade)
         const deletedRecipe = await prisma.prepRecipe.delete({
             where: { id },
         });

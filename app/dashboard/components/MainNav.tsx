@@ -1,30 +1,44 @@
-// File: app/dashboard/components/MainNav.tsx
+// PATH: app/dashboard/components/MainNav.tsx
 "use client";
 
 import { NavLink, Stack, Button, Text, Skeleton } from "@mantine/core";
 import {
     LayoutDashboard, Users, Martini, Archive, Calculator,
     UserPlus, Briefcase, LineChart, LogOut, Armchair, Music, Disc, Package,
-    CookingPot // Changed from ToolsKitchen3
+    CookingPot, ClipboardCheck, ClipboardList, // New icons for tasks/management
+    Receipt, Scale, Trash2 // New icons for invoices, weigh, waste
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useState, useEffect } from "react";
 import { ApiResponse, StaffSession } from "@/lib/types";
 
-// Updated navigation links for Acaia
+// Updated navigation links including catering workflow placeholders
 const links = [
+    // Core Links
     { icon: LayoutDashboard, label: "Visão Geral", href: "/dashboard/live" },
     { icon: Calculator, label: "Nova Comanda (PDV)", href: "/dashboard/pospage" },
     { icon: Users, label: "Clientes", href: "/dashboard/clients" },
     { icon: Armchair, label: "Planta & Mesas", href: "/dashboard/floorplan" },
+
+    // Inventory & Production
     { icon: Martini, label: "Produtos & Receitas", href: "/dashboard/products" },
     { icon: Package, label: "Ingredientes", href: "/dashboard/ingredients"},
     { icon: CookingPot, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"},
-    { icon: Archive, label: "Estoque", href: "/dashboard/stock" },
+    { icon: Archive, label: "Estoque Detalhado", href: "/dashboard/stock" }, // Renamed slightly
+
+    // Catering Workflow Links (Placeholders initially)
+    { icon: ClipboardCheck, label: "Minhas Tarefas", href: "/dashboard/my-tasks" },
+    { icon: ClipboardList, label: "Gerenciar Preparos", href: "/dashboard/prep-management" },
+    { icon: Receipt, label: "Entrada (Invoices)", href: "/dashboard/invoices" },
+    { icon: Scale, label: "Buffet & Pesagem", href: "/dashboard/weigh-station" }, // Combined for now
+    { icon: Trash2, label: "Registro de Perdas", href: "/dashboard/waste" },
+
+    // Entertainment
     { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" },
     { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" },
+
+    // Admin & Reporting
     { icon: UserPlus, label: "Equipe", href: "/dashboard/staff" },
-    // { icon: Briefcase, label: "Parceiros", href: "/dashboard/partners" },
     { icon: LineChart, label: "Relatórios", href: "/dashboard/reports" },
 ];
 
@@ -68,51 +82,47 @@ export function MainNav() {
 
     return (
         <Stack justify="space-between" style={{ height: "100%" }}>
-            <Stack>
-                {links.map((link) => (
-                    <NavLink
-                        key={link.label}
-                        href={link.href}
-                        label={link.label}
-                        leftSection={<link.icon size="1rem" />}
-                        active={pathname === link.href || (link.href !== '/dashboard/live' && pathname.startsWith(link.href + '/'))}
-                        onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
-                            e.preventDefault();
-                            router.push(link.href);
-                        }}
-                        variant="subtle"
-                        styles={(theme) => ({
-                            root: {
-                              borderRadius: theme.radius.sm,
-
-                              // Styles for the active state (independent of color scheme)
-                              '&[data-active]': {
-                                backgroundColor: theme.colors.blue[0],
-                                color: theme.colors.blue[9],
-                                fontWeight: 500,
-                                // Target SVG specifically within active link
-                                '& svg': {
-                                   color: theme.colors.blue[7],
+            <ScrollArea type="auto" style={{ flexGrow: 1, paddingRight: 'var(--mantine-spacing-md)' /* Prevent scrollbar overlap */ }}>
+                <Stack>
+                    {links.map((link) => (
+                        <NavLink
+                            key={link.label}
+                            href={link.href}
+                            label={link.label}
+                            leftSection={<link.icon size="1rem" />}
+                            // Improved active state logic: exact match for '/', startsWith for others
+                            active={pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href + '/'))}
+                            onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+                                e.preventDefault();
+                                router.push(link.href);
+                            }}
+                            variant="subtle"
+                            styles={(theme) => ({
+                                root: {
+                                  borderRadius: theme.radius.sm,
+                                  // Styles for the active state (independent of color scheme)
+                                  '&[data-active]': {
+                                    backgroundColor: theme.fn.variant({ variant: 'light', color: theme.primaryColor }).background,
+                                    color: theme.fn.variant({ variant: 'light', color: theme.primaryColor }).color,
+                                    fontWeight: 500,
+                                    // Target SVG specifically within active link
+                                    '& svg': {
+                                       color: theme.fn.variant({ variant: 'light', color: theme.primaryColor }).color,
+                                    },
+                                  },
+                                  // Default hover state
+                                  '&:hover:not([data-active])': {
+                                      backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.gray[1],
+                                  },
                                 },
-                              },
+                                // leftSection: {}, // Removed if not needed
+                            })}
+                        />
+                    ))}
+                </Stack>
+            </ScrollArea>
 
-                              // Default hover state (will apply in light mode)
-                              '&:hover:not([data-active])': {
-                                  backgroundColor: theme.colors.gray[1],
-                              },
-
-                              // Specific hover state WHEN in dark mode
-                              '[data-mantine-color-scheme="dark"] &:hover:not([data-active])': {
-                                  backgroundColor: theme.colors.dark[6],
-                              },
-                            },
-                             // REMOVED leftSection: {} as it was causing a syntax error
-                        })}
-                    />
-                ))}
-            </Stack>
-
-            <Stack gap="xs">
+            <Stack gap="xs" pt="md" style={{ borderTop: `1px solid var(--mantine-color-default-border)`}}>
                  {loadingSession ? (
                     <Skeleton height={15} width="70%" radius="sm" />
                  ) : (
@@ -133,3 +143,5 @@ export function MainNav() {
         </Stack>
     );
 }
+// Need to import ScrollArea
+import { ScrollArea } from "@mantine/core";

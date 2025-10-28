@@ -12,7 +12,7 @@ type PrepRecipeCreateInput = {
     outputIngredientId: string;
     outputQuantity: string | number;
     notes?: string;
-    estimatedLaborTime?: number;
+    estimatedLaborTime?: number | null; // Allow null
     inputs: {
         ingredientId: string;
         quantity: string | number;
@@ -26,7 +26,7 @@ type PrepRecipeCreateInput = {
 export async function POST(req: NextRequest) {
     const session = await getSession();
     // TODO: Define appropriate roles (MANAGER, OWNER, COOK?)
-    if (!session.user?.isLoggedIn) {
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER', 'COOK'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
 
@@ -63,12 +63,17 @@ export async function POST(req: NextRequest) {
                 if (inputQuantityDecimal.isNegative() || inputQuantityDecimal.isZero()) {
                      throw new Error(`Quantidade para o ingrediente ID ${input.ingredientId} deve ser positiva.`);
                 }
+                // Check if input ingredient exists
+                const ingredientExists = await prisma.ingredient.findUnique({ where: { id: input.ingredientId }});
+                if (!ingredientExists) {
+                    throw new Error(`Ingrediente de entrada com ID ${input.ingredientId} não encontrado.`);
+                }
                 inputsData.push({
                     ingredientId: input.ingredientId,
                     quantity: inputQuantityDecimal,
                 });
             } catch (e: any) {
-                 return NextResponse.json<ApiResponse>({ success: false, error: `Quantidade de entrada inválida: ${e.message}` }, { status: 400 });
+                 return NextResponse.json<ApiResponse>({ success: false, error: `Ingrediente de entrada inválido: ${e.message}` }, { status: 400 });
             }
         }
 
@@ -89,7 +94,7 @@ export async function POST(req: NextRequest) {
                 outputIngredientId,
                 outputQuantity: outputQuantityDecimal,
                 notes,
-                estimatedLaborTime,
+                estimatedLaborTime: estimatedLaborTime ?? null, // Handle null correctly
                 inputs: {
                     createMany: {
                         data: inputsData.map(inp => ({
@@ -99,13 +104,13 @@ export async function POST(req: NextRequest) {
                     }
                 }
             },
-            include: { // Include inputs in the response
+            include: { // Include inputs and output details in the response
                 inputs: {
                     include: {
-                        ingredient: { select: { name: true, unit: true }}
+                        ingredient: { select: { id: true, name: true, unit: true }}
                     }
                 },
-                outputIngredient: { select: { name: true, unit: true }}
+                outputIngredient: { select: { id: true, name: true, unit: true }}
             }
         });
 
@@ -134,12 +139,10 @@ export async function POST(req: NextRequest) {
             if (error.meta?.field_name?.toString().includes('outputIngredientId')) {
                  return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente de saída não encontrado." }, { status: 404 });
             }
-             if (error.meta?.field_name?.toString().includes('ingredientId')) {
-                 return NextResponse.json<ApiResponse>({ success: false, error: "Um ou mais ingredientes de entrada não foram encontrados." }, { status: 404 });
-            }
+             // Input ingredient check is done manually above
          }
         return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro interno do servidor ao criar receita de preparo" },
+            { success: false, error: `Erro interno do servidor ao criar receita de preparo: ${error.message}` },
             { status: 500 }
         );
     }
@@ -151,6 +154,7 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
      const session = await getSession();
+    // Allow any logged-in user to view recipes? Adjust roles if needed.
     if (!session.user?.isLoggedIn) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
@@ -172,6 +176,7 @@ export async function GET(req: NextRequest) {
         const serializedRecipes = prepRecipes.map(recipe => ({
             ...recipe,
             outputQuantity: recipe.outputQuantity.toString(),
+            estimatedLaborTime: recipe.estimatedLaborTime, // Keep as number or null
             inputs: recipe.inputs.map(inp => ({
                 ...inp,
                 quantity: inp.quantity.toString(),

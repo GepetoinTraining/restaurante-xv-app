@@ -1,20 +1,23 @@
-
+// PATH: app/dashboard/prep-recipes/page.tsx
 "use client";
 
 import { useState } from "react";
-import { Button, Container, Stack, Group, Text } from "@mantine/core";
-import { IconPlus, IconToolsKitchen3 } from "@tabler/icons-react"; // Using IconToolsKitchen3 for prep
+import { Button, Container, Stack, Group, Text, Alert } from "@mantine/core";
+import { IconPlus, IconAlertCircle } from "@tabler/icons-react";
 import { PageHeader } from "../components/PageHeader";
 import { ApiResponse, SerializedIngredientDef, SerializedPrepRecipe } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { PrepRecipeTable } from "./components/PrepRecipeTable"; // New table component
-import { ManagePrepRecipeModal } from "./components/ManagePrepRecipeModal"; // New modal component
+import { PrepRecipeTable } from "./components/PrepRecipeTable";
+import { ManagePrepRecipeModal } from "./components/ManagePrepRecipeModal";
+
+// Create a client
+const queryClient = new QueryClient();
 
 // Wrapper for React Query
 export default function PrepRecipesPageWrapper() {
     return (
-        <QueryClientProvider client={new QueryClient()}>
+        <QueryClientProvider client={queryClient}>
             <PrepRecipesPage/>
         </QueryClientProvider>
     );
@@ -38,7 +41,7 @@ function PrepRecipesPage() {
           const res = await fetch("/api/prep-recipes");
           const result: ApiResponse<SerializedPrepRecipe[]> = await res.json();
           if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar receitas de preparo");
-          return result.data!;
+          return result.data ?? []; // Ensure data is always an array
       },
   });
 
@@ -49,12 +52,12 @@ function PrepRecipesPage() {
       isError: isIngredientsError,
       error: ingredientsError,
   } = useQuery<SerializedIngredientDef[]>({
-      queryKey: ['ingredientDefinitions'], // Use the same key as other pages if desired
+      queryKey: ['ingredientDefinitions'], // Use consistent key
       queryFn: async () => {
           const res = await fetch("/api/ingredients");
           const result: ApiResponse<SerializedIngredientDef[]> = await res.json();
           if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar ingredientes");
-          return result.data!;
+          return result.data ?? []; // Ensure data is always an array
       }
   });
 
@@ -82,8 +85,10 @@ function PrepRecipesPage() {
   // Combine loading states
   const isLoading = isLoadingPrepRecipes || isLoadingIngredients;
   const isError = isPrepRecipesError || isIngredientsError;
-  const error = prepRecipesError || ingredientsError;
+  const combinedError = prepRecipesError || ingredientsError;
 
+  // Determine if create button should be disabled
+  const disableCreate = isLoading || isError || !ingredients || ingredients.length === 0 || !ingredients.some(ing => ing.isPrepared);
 
   return (
     <Container fluid>
@@ -93,29 +98,48 @@ function PrepRecipesPage() {
           <Button
             leftSection={<IconPlus size={14} />}
             onClick={handleOpenCreateModal}
-            disabled={isLoading || !ingredients || ingredients.length === 0} // Disable if loading or no ingredients fetched
+            disabled={disableCreate}
           >
             Nova Receita de Preparo
           </Button>
         </Group>
 
-        {isError && <Text c="red">Erro ao carregar dados: {(error as Error)?.message}</Text>}
+        {/* Error handling messages */}
+        {isError && (
+            <Alert title="Erro ao Carregar Dados" color="red" icon={<IconAlertCircle />}>
+                Não foi possível carregar as receitas ou ingredientes: {(combinedError as Error)?.message}
+            </Alert>
+        )}
+        {!isLoading && !isError && ingredients && ingredients.length === 0 && (
+             <Alert title="Atenção" color="orange" icon={<IconAlertCircle />}>
+                Nenhum ingrediente definido no sistema. Adicione ingredientes primeiro na tela de Ingredientes.
+            </Alert>
+        )}
+        {!isLoading && !isError && ingredients && ingredients.length > 0 && !ingredients.some(ing => ing.isPrepared) && (
+             <Alert title="Atenção" color="yellow" icon={<IconAlertCircle />}>
+                Para criar uma receita de preparo, ao menos um ingrediente deve ser marcado como "Preparado" na tela de Ingredientes.
+            </Alert>
+        )}
+
 
         <PrepRecipeTable
           data={prepRecipes ?? []}
-          isLoading={isLoadingPrepRecipes}
+          isLoading={isLoadingPrepRecipes} // Table loading depends only on recipes
           onEdit={handleOpenEditModal}
           onRefresh={refetchPrepRecipes}
         />
       </Stack>
 
-      <ManagePrepRecipeModal
-        opened={isModalOpen}
-        onClose={handleCloseModal}
-        onSuccess={handleSuccess}
-        ingredients={ingredients ?? []} // Pass fetched ingredients
-        prepRecipeToEdit={prepRecipeToEdit}
-      />
+      {/* Render modal only if ingredients are loaded to prevent errors */}
+      {!isLoadingIngredients && (
+        <ManagePrepRecipeModal
+            opened={isModalOpen}
+            onClose={handleCloseModal}
+            onSuccess={handleSuccess}
+            ingredients={ingredients ?? []} // Pass fetched ingredients
+            prepRecipeToEdit={prepRecipeToEdit}
+        />
+      )}
 
     </Container>
   );

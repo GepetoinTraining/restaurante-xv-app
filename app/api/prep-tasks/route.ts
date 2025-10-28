@@ -1,233 +1,239 @@
 // PATH: app/api/prep-tasks/route.ts
 import { prisma } from "@/lib/prisma";
-import { ApiResponse } from "@/lib/types";
+import { ApiResponse, SerializedPrepTask } from "@/lib/types"; // Import SerializedPrepTask
 import { NextRequest, NextResponse } from "next/server";
-import { PrepTask, Prisma } from "@prisma/client";
+import { PrepTask, Prisma, PrepTaskStatus } from "@prisma/client"; // Added PrepTaskStatus
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
 // Type for creating PrepTask
 type PrepTaskCreateInput = {
     prepRecipeId: string;
-    quantityRun: string | number; // How many units of the *output* were made
-    locationId: string; // VenueObject ID where prep happened / output stored
+    targetQuantity: string | number; // How many units of the *output* are desired
+    locationId: string; // VenueObject ID where prep should happen / output stored
     notes?: string;
+    assignedToUserId?: string | null; // Optional: Assign directly on creation
 }
 
 /**
  * POST /api/prep-tasks
- * Executes a preparation task: Records the task and adjusts stock holdings.
+ * Creates a new PrepTask record with PENDING or ASSIGNED status.
+ * Does NOT adjust stock here. Stock adjustment happens on completion via PATCH /[id].
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    // TODO: Define appropriate roles (COOK, BARTENDER, MANAGER?)
-    if (!session.user?.isLoggedIn) {
+    // Allow MANAGER or OWNER to create and assign tasks
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
-    const userId = session.user.id; // User performing the task
+    // const creatorUserId = session.user.id; // User creating the task (Manager/Owner)
 
     try {
         const body: PrepTaskCreateInput = await req.json();
-        const { prepRecipeId, quantityRun, locationId, notes } = body;
+        const { prepRecipeId, targetQuantity, locationId, notes, assignedToUserId } = body;
 
-        if (!prepRecipeId || quantityRun === undefined || !locationId) {
+        if (!prepRecipeId || targetQuantity === undefined || !locationId) {
             return NextResponse.json<ApiResponse>(
-                { success: false, error: "ID da Receita de Preparo, Quantidade Produzida e Localização são obrigatórios." },
+                { success: false, error: "ID da Receita de Preparo, Quantidade Alvo e Localização são obrigatórios." },
                 { status: 400 }
             );
         }
 
-        // Validate quantity produced
-        let quantityRunDecimal: Decimal;
+        // Validate target quantity
+        let targetQuantityDecimal: Decimal;
         try {
-            quantityRunDecimal = new Decimal(quantityRun);
-            if (quantityRunDecimal.isNegative() || quantityRunDecimal.isZero()) {
-                throw new Error("Quantidade produzida deve ser positiva.");
+            targetQuantityDecimal = new Decimal(targetQuantity);
+            if (targetQuantityDecimal.isNegative() || targetQuantityDecimal.isZero()) {
+                throw new Error("Quantidade alvo deve ser positiva.");
             }
         } catch (e: any) {
-            return NextResponse.json<ApiResponse>({ success: false, error: `Quantidade produzida inválida: ${e.message}` }, { status: 400 });
+            return NextResponse.json<ApiResponse>({ success: false, error: `Quantidade alvo inválida: ${e.message}` }, { status: 400 });
         }
 
-        // Fetch the PrepRecipe to get input ingredients and output details
+        // Validate PrepRecipe existence
         const prepRecipe = await prisma.prepRecipe.findUnique({
             where: { id: prepRecipeId },
-            include: {
-                inputs: { include: { ingredient: true } }, // Include full ingredient for unit info
-                outputIngredient: true,
-            }
+            select: { id: true } // Just need to know it exists
         });
-
         if (!prepRecipe) {
              return NextResponse.json<ApiResponse>({ success: false, error: "Receita de preparo não encontrada." }, { status: 404 });
         }
 
-        // Calculate how many times the base recipe was run
-        const runs = quantityRunDecimal.dividedBy(prepRecipe.outputQuantity);
-        if (!runs.isInteger()) {
-            // This might be okay depending on use case, but for simplicity let's require whole runs for now
-            // Or adjust logic to handle partial runs if needed
-             console.warn(`Prep task for ${prepRecipe.name} resulted in partial recipe runs (${runs.toString()}). Input deduction might be fractional.`);
-             // Allow fractional runs for now.
+        // Validate Location existence (ensure it's a storage type?)
+        const location = await prisma.venueObject.findUnique({
+            where: { id: locationId },
+            select: { id: true, type: true }
+        });
+        if (!location) {
+             return NextResponse.json<ApiResponse>({ success: false, error: "Localização não encontrada." }, { status: 404 });
+        }
+         // Optional: Check if location type is suitable for prep/storage
+        const validLocationTypes: VenueObject['type'][] = ['STORAGE', 'FREEZER', 'SHELF', 'WORKSTATION_STORAGE', 'WORKSTATION'];
+        if (!validLocationTypes.includes(location.type)) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Tipo de localização inválido para tarefa de preparo." }, { status: 400 });
         }
 
-        // --- Stock Adjustment Logic in Transaction ---
-        const newPrepTask = await prisma.$transaction(async (tx) => {
 
-            // 1. Deduct Input Ingredients
-            for (const input of prepRecipe.inputs) {
-                const requiredQuantity = input.quantity.times(runs); // Total needed for this task run
-                let deductedAmount = new Decimal(0);
-
-                // Find available stock holdings for this input ingredient at the specified location
-                // Order by expiry or purchase date if needed (FIFO/LIFO) - simple deduction for now
-                const holdings = await tx.stockHolding.findMany({
-                    where: {
-                        ingredientId: input.ingredientId,
-                        venueObjectId: locationId,
-                        quantity: { gt: 0 } // Only consider holdings with stock
-                    },
-                    orderBy: { createdAt: 'asc' } // Simple FIFO based on creation
-                });
-
-                for (const holding of holdings) {
-                    const quantityToDeduct = Decimal.min(requiredQuantity.minus(deductedAmount), holding.quantity);
-
-                    await tx.stockHolding.update({
-                        where: { id: holding.id },
-                        data: {
-                            quantity: { decrement: quantityToDeduct }
-                        }
-                    });
-
-                    deductedAmount = deductedAmount.plus(quantityToDeduct);
-                    if (deductedAmount.gte(requiredQuantity)) {
-                        break; // Deducted enough
-                    }
-                }
-
-                // Check if enough stock was found and deducted
-                if (deductedAmount.lt(requiredQuantity)) {
-                    throw new Error(`Estoque insuficiente de "${input.ingredient.name}" (${input.ingredient.unit}) na localização selecionada. Necessário: ${requiredQuantity.toString()}, Disponível: ${deductedAmount.toString()}.`);
-                }
+        // Validate assigned user if provided
+        if (assignedToUserId) {
+            const assignedUser = await prisma.user.findUnique({ where: { id: assignedToUserId }, select: { id: true } });
+            if (!assignedUser) {
+                return NextResponse.json<ApiResponse>({ success: false, error: "Usuário atribuído não encontrado." }, { status: 404 });
             }
+        }
 
-            // 2. Add/Update Output Ingredient StockHolding
-            // Find existing holding or create a new one
-            const existingOutputHolding = await tx.stockHolding.findFirst({
-                 where: {
-                     ingredientId: prepRecipe.outputIngredientId,
-                     venueObjectId: locationId,
-                     // Optional: Match purchase/expiry dates if managing batches strictly?
-                     // For simplicity, add to any existing batch or create new if none.
-                 },
-                 // Consider ordering if multiple batches exist
-            });
+        // Determine initial status
+        const initialStatus = assignedToUserId ? PrepTaskStatus.ASSIGNED : PrepTaskStatus.PENDING;
+        const assignedAt = assignedToUserId ? new Date() : null;
 
-            // Calculate cost for the produced batch
-            // Sum costs of inputs used. This is a simplified calculation.
-            let totalInputCost = new Decimal(0);
-             for (const input of prepRecipe.inputs) {
-                 const inputCost = input.ingredient.costPerUnit.times(input.quantity.times(runs));
-                 totalInputCost = totalInputCost.plus(inputCost);
-             }
-            const costPerOutputUnit = totalInputCost.dividedBy(quantityRunDecimal);
-
-
-            if (existingOutputHolding) {
-                await tx.stockHolding.update({
-                    where: { id: existingOutputHolding.id },
-                    data: {
-                        quantity: { increment: quantityRunDecimal },
-                        // Optional: Update cost? Average cost might be complex. Store cost with batch.
-                        // costAtAcquisition: /* Recalculate average? */
+        // Create the PrepTask record
+        const newPrepTask = await prisma.prepTask.create({
+            data: {
+                prepRecipeId,
+                targetQuantity: targetQuantityDecimal,
+                assignedToUserId: assignedToUserId ?? null,
+                locationId,
+                notes,
+                status: initialStatus,
+                assignedAt: assignedAt,
+                // executedById is set on completion
+                // quantityRun is set on completion
+            },
+             // Include details needed for the response/workflow card
+            include: {
+                prepRecipe: {
+                    select: {
+                        id: true,
+                        name: true,
+                        outputIngredient: { select: { name: true, unit: true } },
+                        estimatedLaborTime: true
                     }
-                });
-            } else {
-                 await tx.stockHolding.create({
-                    data: {
-                        ingredientId: prepRecipe.outputIngredientId,
-                        venueObjectId: locationId,
-                        quantity: quantityRunDecimal,
-                        // Set cost for this new batch
-                        costAtAcquisition: costPerOutputUnit,
-                        // Set purchaseDate to now, expiryDate maybe based on recipe?
-                        purchaseDate: new Date(),
-                    }
-                });
+                },
+                assignedTo: { select: { id: true, name: true } },
+                executedBy: { select: { id: true, name: true } },
+                location: { select: { id: true, name: true } },
             }
-
-             // 3. Create the PrepTask record
-            const task = await tx.prepTask.create({
-                data: {
-                    prepRecipeId,
-                    quantityRun: quantityRunDecimal,
-                    executedById: userId,
-                    locationId,
-                    notes,
-                }
-            });
-
-            // Recalculate average cost for the output ingredient (if needed)
-            // This could be done here or in a separate process/trigger
-            const allHoldings = await tx.stockHolding.findMany({ where: { ingredientId: prepRecipe.outputIngredientId, quantity: { gt: 0 } } });
-            let totalValue = new Decimal(0);
-            let totalQuantity = new Decimal(0);
-            allHoldings.forEach(h => {
-                const cost = h.costAtAcquisition ?? prepRecipe.outputIngredient.costPerUnit; // Fallback?
-                totalValue = totalValue.plus(h.quantity.times(cost));
-                totalQuantity = totalQuantity.plus(h.quantity);
-            });
-            const newAverageCost = totalQuantity.isZero() ? new Decimal(0) : totalValue.dividedBy(totalQuantity);
-
-             await tx.ingredient.update({
-                 where: { id: prepRecipe.outputIngredientId },
-                 data: { costPerUnit: newAverageCost }
-             });
-
-
-            return task;
-
-        }); // End Transaction
+        });
 
         // Serialize Decimals for response
-        const serializedTask = {
+        const serializedTask: SerializedPrepTask = {
             ...newPrepTask,
-            quantityRun: newPrepTask.quantityRun.toString(),
+            targetQuantity: newPrepTask.targetQuantity.toString(),
+            quantityRun: newPrepTask.quantityRun ? newPrepTask.quantityRun.toString() : null,
+            createdAt: newPrepTask.createdAt.toISOString(),
+            assignedAt: newPrepTask.assignedAt?.toISOString() ?? null,
+            startedAt: newPrepTask.startedAt?.toISOString() ?? null,
+            completedAt: newPrepTask.completedAt?.toISOString() ?? null,
         };
 
-        return NextResponse.json<ApiResponse<any>>(
+        return NextResponse.json<ApiResponse<SerializedPrepTask>>(
             { success: true, data: serializedTask },
             { status: 201 }
         );
 
     } catch (error: any) {
-        console.error("Error executing prep task:", error);
+        console.error("Error creating prep task:", error);
          if (error instanceof Prisma.PrismaClientKnownRequestError) {
              if (error.code === 'P2003') { // FK constraint failed
-                 if (error.meta?.field_name?.toString().includes('prepRecipeId')) {
-                    return NextResponse.json<ApiResponse>({ success: false, error: "Receita de preparo não encontrada." }, { status: 404 });
-                 }
-                 if (error.meta?.field_name?.toString().includes('locationId')) {
-                     return NextResponse.json<ApiResponse>({ success: false, error: "Localização não encontrada." }, { status: 404 });
-                 }
-                 if (error.meta?.field_name?.toString().includes('executedById')) {
-                     return NextResponse.json<ApiResponse>({ success: false, error: "Usuário executor não encontrado." }, { status: 404 });
-                 }
+                 // Handled manually above
              }
-             // P2025 can happen inside transaction if findUnique fails after initial check
-             if (error.code === 'P2025') {
-                 return NextResponse.json<ApiResponse>({ success: false, error: "Erro: Um registro necessário não foi encontrado durante a transação." }, { status: 404 });
+             if (error.code === 'P2025') { // Record not found during creation (unlikely)
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Erro: Um registro relacionado não foi encontrado." }, { status: 404 });
              }
-        }
-        // Catch specific error from transaction
-        if (error.message.startsWith('Estoque insuficiente')) {
-             return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 400 });
         }
         return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro interno do servidor ao executar tarefa de preparo" },
+            { success: false, error: `Erro interno do servidor ao criar tarefa de preparo: ${error.message}` },
             { status: 500 }
         );
     }
 }
 
-// GET /api/prep-tasks might be useful later for viewing history
+/**
+ * GET /api/prep-tasks
+ * Fetches prep tasks, optionally filtered by status or assigned user.
+ */
+export async function GET(req: NextRequest) {
+    const session = await getSession();
+    if (!session.user?.isLoggedIn) {
+        return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const statusParam = searchParams.get("status");
+    const assignedToUserIdParam = searchParams.get("assignedToUserId");
+    const includeCompleted = searchParams.get("includeCompleted") === 'true'; // Check if completed tasks should be included
+
+    try {
+        const whereClause: Prisma.PrepTaskWhereInput = {};
+
+        if (statusParam) {
+            const statuses = statusParam.split(',') as PrepTaskStatus[];
+            if (statuses.every(s => Object.values(PrepTaskStatus).includes(s))) {
+                whereClause.status = { in: statuses };
+            } else {
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Status inválido fornecido." }, { status: 400 });
+            }
+        } else if (!includeCompleted) {
+             // Default: Fetch only active tasks if no specific status and includeCompleted is false
+             whereClause.status = { notIn: [PrepTaskStatus.COMPLETED, PrepTaskStatus.CANCELLED] };
+        }
+
+
+        if (assignedToUserIdParam) {
+             if (assignedToUserIdParam === 'unassigned') {
+                 whereClause.assignedToUserId = null;
+                 whereClause.status = PrepTaskStatus.PENDING; // Only pending tasks can be unassigned
+             } else if (assignedToUserIdParam === 'me') {
+                  whereClause.assignedToUserId = session.user.id;
+             }
+             else {
+                 whereClause.assignedToUserId = assignedToUserIdParam;
+             }
+        }
+
+
+        const prepTasks = await prisma.prepTask.findMany({
+            where: whereClause,
+            include: {
+                 prepRecipe: {
+                    select: {
+                        id: true,
+                        name: true,
+                        outputIngredient: { select: { name: true, unit: true } },
+                        estimatedLaborTime: true
+                    }
+                },
+                assignedTo: { select: { id: true, name: true } },
+                executedBy: { select: { id: true, name: true } },
+                location: { select: { id: true, name: true } },
+            },
+            orderBy: {
+                createdAt: 'desc', // Show newest first
+            },
+        });
+
+        // Serialize Decimals
+        const serializedTasks: SerializedPrepTask[] = prepTasks.map(task => ({
+            ...task,
+            targetQuantity: task.targetQuantity.toString(),
+            quantityRun: task.quantityRun ? task.quantityRun.toString() : null,
+             createdAt: task.createdAt.toISOString(),
+            assignedAt: task.assignedAt?.toISOString() ?? null,
+            startedAt: task.startedAt?.toISOString() ?? null,
+            completedAt: task.completedAt?.toISOString() ?? null,
+        }));
+
+
+        return NextResponse.json<ApiResponse<SerializedPrepTask[]>>(
+            { success: true, data: serializedTasks },
+            { status: 200 }
+        );
+
+     } catch (error) {
+        console.error("Error fetching prep tasks:", error);
+        return NextResponse.json<ApiResponse>(
+            { success: false, error: "Erro interno do servidor ao buscar tarefas de preparo" },
+            { status: 500 }
+        );
+     }
+}

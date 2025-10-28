@@ -1,9 +1,9 @@
-// File: lib/types.ts
+// PATH: lib/types.ts
 import {
     Client, /* Partner, */ Product as PrismaProduct, User, /* StaffCommission, */ Visit ,
     // ---- START FIX ----
     // Removed SeatingArea import
-    /* SeatingArea, */ Entertainer, VinylRecord, Prisma, /* ClientStatus */
+    /* SeatingArea, */  Prisma, /* ClientStatus */
     // ---- END FIX ----
     ProductType, Workstation, Ingredient, StockHolding as PrismaStockHolding, VenueObject, Order, OrderItem, // Added OrderItem
     // Add new Prisma types
@@ -12,7 +12,9 @@ import {
     PrepTask as PrismaPrepTask,
     Role, // Ensure Role is imported if used directly (e.g., in StaffSession)
     ClientWallet, // Added ClientWallet
-    WalletTransaction // Added WalletTransaction here for ClientWalletStringBalance
+    WalletTransaction, // Added WalletTransaction here for ClientWalletStringBalance
+    VenueObjectType, // Added VenueObjectType
+    PrepTaskStatus // Added PrepTaskStatus
 } from "@prisma/client";
 
 // --- Client-side Product type with string prices ---
@@ -65,7 +67,7 @@ type OrderWithItemsAndHandler = Omit<Order, 'total'> & {
     total: string;
     items: OrderItemWithProductStringPrice[];
     // Make handledBy structure more specific based on API response
-    handledBy: { user: { name: string } }[]; // Assuming user always exists
+    handledBy: { user: { id: string; name: string } }[]; // Added ID
 };
 
 // Type for Visit including orders and venueObject (with string totalSpent)
@@ -108,9 +110,10 @@ export type SerializedIngredientDef = Omit<Ingredient, "costPerUnit"> & {
 export type SerializedStockHolding = Omit<PrismaStockHolding, 'quantity' | 'costAtAcquisition'> & {
     quantity: string;
     costAtAcquisition: string | null;
-    ingredient: { name: string; unit: string };
-    location: { name: string }; // Use location based on schema relation name
+    ingredient: { id: string; name: string; unit: string }; // Added ID
+    location: { id: string; name: string }; // Added ID
 };
+
 
 // Aggregated Stock (as returned by API)
 export type AggregatedIngredientStock = {
@@ -122,6 +125,10 @@ export type AggregatedIngredientStock = {
     isPrepared: boolean; // Ensure this is included
 };
 
+// --- Storage Location (as returned by API) ---
+export type StorageLocation = Pick<VenueObject, 'id' | 'name' | 'type'>;
+
+
 // --- PREP RECIPES & TASKS ---
 // Prep Recipe Input (as returned by API)
 export type SerializedPrepRecipeInput = Omit<PrismaPrepRecipeInput, 'quantity'> & {
@@ -131,17 +138,32 @@ export type SerializedPrepRecipeInput = Omit<PrismaPrepRecipeInput, 'quantity'> 
 
 // Prep Recipe Definition (as returned by API)
 export type SerializedPrepRecipe = Omit<PrismaPrepRecipe, 'outputQuantity' | 'inputs'> & {
-    outputQuantity: string;
+    outputQuantity: string; // Stringified Decimal
+    estimatedLaborTime: number | null; // Keep as number or null
     outputIngredient: { id: string; name: string; unit: string };
     inputs: SerializedPrepRecipeInput[];
 };
 
-// Prep Task Record (as returned by API)
-export type SerializedPrepTask = Omit<PrismaPrepTask, 'quantityRun'> & {
-    quantityRun: string;
-    prepRecipe: { name: string };
-    executedBy: { name: string };
-    location: { name: string };
+// Prep Task Record (as returned by API, more detailed for workflow)
+export type SerializedPrepTask = Omit<PrismaPrepTask, 'quantityRun' | 'targetQuantity'> & {
+    quantityRun: string | null; // Stringified Decimal or null if not completed
+    targetQuantity: string; // Stringified Decimal
+    prepRecipe: {
+        id: string;
+        name: string;
+        outputIngredient: { name: string; unit: string };
+        estimatedLaborTime: number | null;
+    };
+    assignedTo: { id: string; name: string } | null;
+    executedBy: { id: string; name: string } | null;
+    location: { id: string; name: string };
+    // Timestamps are already ISO strings
+    createdAt: string;
+    assignedAt: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    // Status enum
+    status: PrepTaskStatus;
 };
 
 

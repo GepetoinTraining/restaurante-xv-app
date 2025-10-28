@@ -1,3 +1,4 @@
+// PATH: app/dashboard/prep-recipes/components/ManagePrepRecipeModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -15,6 +16,7 @@ import {
   Text,
   Title,
   Alert,
+  ScrollArea, // Import ScrollArea
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
@@ -26,7 +28,7 @@ import { IconTrash } from "@tabler/icons-react";
 interface PrepIngredientItem {
   key: string;
   ingredientId: string | null;
-  quantity: string;
+  quantity: string; // Keep as string for form input
 }
 
 interface ManagePrepRecipeModalProps {
@@ -49,73 +51,90 @@ export function ManagePrepRecipeModal({
 
   // Filter ingredients for dropdowns
   const preparedIngredients = ingredients.filter(ing => ing.isPrepared);
-  const rawIngredients = ingredients.filter(ing => !ing.isPrepared); // Or allow prepared as input? Decision needed. Let's allow all for now.
+  // Use all ingredients as potential inputs
+  const allIngredients = ingredients;
 
   const form = useForm({
     initialValues: {
       name: "",
       outputIngredientId: null as string | null,
-      outputQuantity: "1",
+      outputQuantity: "1", // Default as string
       notes: "",
-      estimatedLaborTime: null as number | null | '', // Allow empty string
+      estimatedLaborTime: '' as number | string | null, // Allow empty string, number, or null
       inputs: [] as PrepIngredientItem[],
     },
     validate: {
-      name: (value) => (value.trim().length < 2 ? "Nome é obrigatório" : null),
+      name: (value) => (value.trim().length < 2 ? "Nome é obrigatório (mín 2 chars)" : null),
       outputIngredientId: (value) => (value ? null : "Ingrediente de saída é obrigatório"),
-      outputQuantity: (value) => (parseFloat(value) > 0 ? null : "Qtd. de saída inválida"),
+      outputQuantity: (value) => {
+          const num = parseFloat(value);
+          return !isNaN(num) && num > 0 ? null : "Qtd. de saída inválida (> 0)";
+      },
       inputs: {
-        ingredientId: (value) => (value ? null : "Ingrediente é obrigatório"),
-        quantity: (value) => (parseFloat(value) > 0 ? null : "Qtd. inválida"),
+        ingredientId: (value) => (value ? null : "Obrigatório"),
+        quantity: (value) => {
+            const num = parseFloat(value);
+            return !isNaN(num) && num > 0 ? null : "Qtd. inválida (> 0)";
+        },
       },
        estimatedLaborTime: (val) => {
-           if (val === null || val === '') return null; // Allow empty
+           if (val === null || val === '') return null; // Allow empty or null
            const num = Number(val);
-           return isNaN(num) || num < 0 ? "Tempo deve ser um número positivo ou vazio" : null;
+           return isNaN(num) || num < 0 ? "Tempo deve ser número positivo ou vazio" : null;
        },
     },
   });
 
   // Populate form if editing
   useEffect(() => {
-    if (isEditMode && prepRecipeToEdit && opened) {
-      form.setValues({
-        name: prepRecipeToEdit.name,
-        outputIngredientId: prepRecipeToEdit.outputIngredient.id,
-        outputQuantity: prepRecipeToEdit.outputQuantity,
-        notes: prepRecipeToEdit.notes || "",
-        estimatedLaborTime: prepRecipeToEdit.estimatedLaborTime ?? '',
-        inputs: prepRecipeToEdit.inputs.map(input => ({
-          key: randomId(), // Generate new keys for form state
-          ingredientId: input.ingredient.id,
-          quantity: input.quantity,
-        }))
-      });
-    } else if (!opened) {
-      form.reset(); // Reset form when modal closes or opens for creation
+    if (opened) {
+      if (isEditMode && prepRecipeToEdit) {
+        form.setValues({
+          name: prepRecipeToEdit.name,
+          outputIngredientId: prepRecipeToEdit.outputIngredient.id,
+          outputQuantity: prepRecipeToEdit.outputQuantity, // Already string from API
+          notes: prepRecipeToEdit.notes || "",
+          estimatedLaborTime: prepRecipeToEdit.estimatedLaborTime ?? '', // Use '' for empty number input
+          inputs: prepRecipeToEdit.inputs.map(input => ({
+            key: randomId(),
+            ingredientId: input.ingredient.id,
+            quantity: input.quantity, // Already string from API
+          }))
+        });
+      } else {
+        // Reset for create mode when opened
+        form.reset();
+        // Add one empty input row by default for new recipes
+        form.insertListItem("inputs", { key: randomId(), ingredientId: null, quantity: "" });
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prepRecipeToEdit, opened]);
+  }, [prepRecipeToEdit, opened, isEditMode]); // Rerun when these change
 
   // Handle form submission
   const handleSubmit = async (values: typeof form.values) => {
     setIsSubmitting(true);
 
-     if (!values.outputIngredientId) { // Should be caught by validation, but double check
-        notifications.show({title: "Erro", message: "Ingrediente de saída não selecionado.", color: "red"});
-        setIsSubmitting(false);
-        return;
+     if (!values.outputIngredientId) {
+        notifications.show({title: "Erro de Validação", message: "Selecione o ingrediente de saída.", color: "red"});
+        setIsSubmitting(false); return;
      }
      if (values.inputs.length === 0) {
-          notifications.show({title: "Erro", message: "Adicione pelo menos um ingrediente de entrada.", color: "red"});
-          setIsSubmitting(false);
-          return;
+          notifications.show({title: "Erro de Validação", message: "Adicione pelo menos um ingrediente de entrada.", color: "red"});
+          setIsSubmitting(false); return;
+     }
+     // Extra check for empty input values which validation might miss if untouched
+     if (values.inputs.some(inp => !inp.ingredientId || !inp.quantity || parseFloat(inp.quantity) <= 0)) {
+         notifications.show({title: "Erro de Validação", message: "Verifique os ingredientes de entrada (seleção e quantidade > 0).", color: "red"});
+         setIsSubmitting(false); return;
      }
 
+
+    // Prepare payload: convert time to number or null, keep quantities as strings
     const payload = {
         ...values,
         estimatedLaborTime: values.estimatedLaborTime === '' ? null : Number(values.estimatedLaborTime),
-        // Ensure quantities are strings if API expects strings, or convert here if needed
+        inputs: values.inputs.map(({ key, ...rest }) => rest), // Remove 'key' before sending
     };
 
     const url = isEditMode ? `/api/prep-recipes/${prepRecipeToEdit!.id}` : "/api/prep-recipes";
@@ -144,58 +163,67 @@ export function ManagePrepRecipeModal({
           color: "red",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Submit error:", error);
-       notifications.show({ title: "Erro", message: "Ocorreu um erro inesperado.", color: "red" });
+       notifications.show({ title: "Erro Inesperado", message: error.message || "Ocorreu um erro de rede ou servidor.", color: "red" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleClose = () => {
-    // form.reset(); // Reset is handled by useEffect on 'opened' change
+    form.reset(); // Reset form state on close
     onClose();
   };
 
-  // --- Form Fields for Inputs ---
-  const ingredientOptions = ingredients.map((ing) => ({ // Use all ingredients as potential inputs
+  // --- Form Fields ---
+  const allIngredientOptions = allIngredients.map((ing) => ({
     value: ing.id,
-    label: `${ing.name} (${ing.unit}) ${ing.isPrepared ? '[P]' : ''}`, // Indicate if prepared
+    label: `${ing.name} (${ing.unit}) ${ing.isPrepared ? '[P]' : ''}`,
   }));
    const outputIngredientOptions = preparedIngredients.map((ing) => ({
     value: ing.id,
     label: `${ing.name} (${ing.unit})`,
   }));
 
-  const inputFields = form.values.inputs.map((item, index) => (
-    <Group key={item.key} grow align="flex-start" wrap="nowrap">
-      <Select
-        label="Ingrediente Entrada"
-        placeholder="Selecione..."
-        data={ingredientOptions}
-        {...form.getInputProps(`inputs.${index}.ingredientId`)}
-        searchable
-        required
-        // withinPortal removed in previous fix
-      />
-      <NumberInput
-        label="Qtd. Entrada"
-        placeholder="1.5"
-        decimalScale={3}
-        min={0.001}
-        {...form.getInputProps(`inputs.${index}.quantity`)}
-        required
-      />
-      <ActionIcon
-        color="red"
-        onClick={() => form.removeListItem("inputs", index)} // Corrected method
-        mt={25} // Align with input label
-        variant="light"
-      >
-        <IconTrash size={18} />
-      </ActionIcon>
-    </Group>
-  ));
+  const inputFields = form.values.inputs.map((item, index) => {
+      const selectedIngredient = allIngredients.find(i => i.id === item.ingredientId);
+      return (
+        <Group key={item.key} grow align="flex-start" wrap="nowrap" gap="xs">
+          <Select
+            // label="Ingrediente Entrada"
+            label={index === 0 ? "Ingrediente Entrada" : undefined}
+            placeholder="Selecione..."
+            data={allIngredientOptions}
+            {...form.getInputProps(`inputs.${index}.ingredientId`)}
+            searchable
+            required
+            limit={20} // Improve performance for long lists
+            error={form.errors[`inputs.${index}.ingredientId`]}
+          />
+          <NumberInput
+            // label="Qtd. Entrada"
+            label={index === 0 ? `Qtd. (${selectedIngredient?.unit || 'UN'})` : undefined}
+            placeholder="1.5"
+            decimalScale={3}
+            min={0.001}
+            step={0.1}
+            {...form.getInputProps(`inputs.${index}.quantity`)}
+            required
+            error={form.errors[`inputs.${index}.quantity`]}
+          />
+          <ActionIcon
+            color="red"
+            onClick={() => form.removeListItem("inputs", index)}
+            mt={index === 0 ? 25 : 0} // Align with input label only for the first row
+            variant="light"
+            disabled={form.values.inputs.length <= 1} // Prevent removing the last item easily
+          >
+            <IconTrash size={16} />
+          </ActionIcon>
+        </Group>
+      );
+  });
 
 
   return (
@@ -204,6 +232,7 @@ export function ManagePrepRecipeModal({
       onClose={handleClose}
       title={isEditMode ? "Editar Receita de Preparo" : "Nova Receita de Preparo"}
       size="xl"
+      overlayProps={{ backgroundOpacity: 0.55, blur: 3 }} // Mantine v7+ props
     >
       <LoadingOverlay visible={isSubmitting} />
       <form onSubmit={form.onSubmit(handleSubmit)}>
@@ -223,9 +252,8 @@ export function ManagePrepRecipeModal({
                     data={outputIngredientOptions}
                     {...form.getInputProps('outputIngredientId')}
                     searchable
-                    // ---- START FIX ----
-                    // withinPortal // Removed this line
-                    // ---- END FIX ----
+                    limit={20}
+                    nothingFoundMessage={preparedIngredients.length === 0 ? "Nenhum item preparado..." : "Nenhum encontrado"}
                  />
                  <NumberInput
                     required
@@ -234,32 +262,45 @@ export function ManagePrepRecipeModal({
                     placeholder="0.9"
                     decimalScale={3}
                     min={0.001}
+                    step={0.1}
                     {...form.getInputProps('outputQuantity')}
                 />
             </Group>
-             {!preparedIngredients.length && (
-                 <Alert color="orange" title="Atenção">Nenhum ingrediente marcado como 'Preparado' encontrado. Defina um ingrediente como preparado na tela de Ingredientes antes de criar uma receita para ele.</Alert>
+             {!preparedIngredients.length && ingredients.length > 0 && (
+                 <Alert color="orange" title="Atenção">
+                     Nenhum ingrediente marcado como 'Preparado' encontrado. Vá para a tela de Ingredientes, crie ou edite um item e marque a opção "Este é um item preparado?".
+                 </Alert>
+             )}
+             {ingredients.length === 0 && (
+                 <Alert color="red" title="Atenção">
+                     Nenhum ingrediente definido no sistema. Vá para a tela de Ingredientes para adicioná-los primeiro.
+                 </Alert>
              )}
 
             {/* Input Ingredients Section */}
             <Title order={5} mt="md">Ingredientes de Entrada</Title>
-            {inputFields.length > 0 ? (
-              inputFields
-            ) : (
-              <Text c="dimmed" size="sm">Nenhum ingrediente de entrada adicionado.</Text>
-            )}
+            <ScrollArea.Autosize mah={250}> {/* Add ScrollArea for many inputs */}
+                <Stack gap="xs">
+                    {inputFields.length > 0 ? (
+                      inputFields
+                    ) : (
+                      <Text c="dimmed" size="sm" ta="center" p="md">Adicione ingredientes de entrada abaixo.</Text>
+                    )}
+                </Stack>
+             </ScrollArea.Autosize>
             <Button
               variant="outline"
               onClick={() =>
-                form.insertListItem("inputs", { // Corrected method
+                form.insertListItem("inputs", {
                   key: randomId(),
                   ingredientId: null,
-                  quantity: "1",
-                }, form.values.inputs.length) // Added index
+                  quantity: "", // Start empty for better validation feedback
+                }, form.values.inputs.length)
               }
               size="xs"
+              disabled={ingredients.length === 0} // Disable if no ingredients exist
             >
-              Adicionar Ingrediente de Entrada
+              + Adicionar Ingrediente de Entrada
             </Button>
 
 
@@ -267,7 +308,7 @@ export function ManagePrepRecipeModal({
             <Title order={5} mt="lg">Detalhes Adicionais</Title>
             <Textarea
               label="Notas / Instruções (Opcional)"
-              placeholder="Ex: Cortar em cubos de 5mm"
+              placeholder="Ex: Cortar em cubos de 5mm, armazenar refrigerado..."
               {...form.getInputProps('notes')}
               minRows={2}
             />
@@ -280,7 +321,7 @@ export function ManagePrepRecipeModal({
                 {...form.getInputProps('estimatedLaborTime')}
             />
 
-            <Button type="submit" mt="xl" loading={isSubmitting} disabled={!preparedIngredients.length}>
+            <Button type="submit" mt="xl" loading={isSubmitting} disabled={ingredients.length === 0 || preparedIngredients.length === 0}>
               {isEditMode ? "Salvar Alterações" : "Criar Receita de Preparo"}
             </Button>
           </Stack>
