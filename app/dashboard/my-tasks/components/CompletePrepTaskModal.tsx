@@ -76,7 +76,6 @@ export function CompletePrepTaskModal({
                         required
                         label={`Quantidade Realmente Produzida (em ${unit})`}
                         description="Informe quanto foi produzido. Pode ser diferente do alvo."
-                        {/* ---- END FIX ---- */}
                         placeholder={task.targetQuantity}
                         decimalScale={3}
                         min={0} // Allow zero
