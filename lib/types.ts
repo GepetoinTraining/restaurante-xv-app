@@ -14,7 +14,10 @@ import {
     ClientWallet, // Added ClientWallet
     WalletTransaction, // Added WalletTransaction here for ClientWalletStringBalance
     VenueObjectType, // Added VenueObjectType
-    PrepTaskStatus // Added PrepTaskStatus
+    PrepTaskStatus,
+    BuffetPan,
+    BuffetStation,
+    // Added PrepTaskStatus
 } from "@prisma/client";
 
 // --- Client-side Product type with string prices ---
@@ -230,4 +233,18 @@ export type ReportData = {
 // Moved WalletTransaction import to the top with other Prisma types
 export type SerializedWalletTransaction = Omit<WalletTransaction, 'amount'> & {
     amount: string;
+};
+
+export type SerializedBuffetPan = Omit<BuffetPan, 'currentQuantity' | 'capacity'> & {
+    currentQuantity: string;
+    capacity: string;
+    ingredient: {
+        id: string;
+        name: string;
+        unit: string;
+    } | null;
+};
+
+export type BuffetStationWithPans = Omit<BuffetStation, 'pans'> & {
+    pans: SerializedBuffetPan[];
 };
