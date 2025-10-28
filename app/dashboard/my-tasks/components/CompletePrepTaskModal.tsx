@@ -48,6 +48,12 @@ export function CompletePrepTaskModal({
     };
 
     if (!task) return null;
+    
+    // ---- START FIX: Provide fallback values for potentially null ingredient ----
+    const unit = task.prepRecipe.outputIngredient?.unit ?? 'unid.';
+    const name = task.prepRecipe.outputIngredient?.name ?? 'Item Preparado';
+    // ---- END FIX ----
+
 
     return (
         <Modal
@@ -59,16 +65,18 @@ export function CompletePrepTaskModal({
             <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack>
                     <Title order={5}>Confirmar Quantidade Produzida</Title>
+                    {/* ---- START FIX: Use fallback variables ---- */}
                     <Text size="sm">
-                        Receita base produz: {task.prepRecipe.outputQuantity} {task.prepRecipe.outputIngredient.unit} de {task.prepRecipe.outputIngredient.name}.
+                        Receita base produz: {task.prepRecipe.outputQuantity} {unit} de {name}.
                     </Text>
                      <Text size="sm">
-                        Quantidade alvo da tarefa: {task.targetQuantity} {task.prepRecipe.outputIngredient.unit}.
+                        Quantidade alvo da tarefa: {task.targetQuantity} {unit}.
                     </Text>
                     <NumberInput
                         required
-                        label={`Quantidade Realmente Produzida (em ${task.prepRecipe.outputIngredient.unit})`}
+                        label={`Quantidade Realmente Produzida (em ${unit})`}
                         description="Informe quanto foi produzido. Pode ser diferente do alvo."
+                        {/* ---- END FIX ---- */}
                         placeholder={task.targetQuantity}
                         decimalScale={3}
                         min={0} // Allow zero

@@ -1,195 +1,236 @@
 // PATH: app/dashboard/weigh-station/page.tsx
-"use client";
+'use client';
 
-import { useState } from "react";
-import { Container, Stack, Title, Text, Loader, Alert, Button, Group, NumberInput, Paper, Image, Box } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
-import { ApiResponse, SerializedStockHolding } from "@/lib/types"; // Need VisitSelector types
-import { notifications } from "@mantine/notifications";
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { IconAlertCircle, IconCamera, IconScale } from "@tabler/icons-react";
-import { VisitSelector } from "@/app/dashboard/pospage/components/VisitSelector"; // Reuse VisitSelector
-import { ActiveVisitResponse } from "@/app/api/visits/active/route"; // Type for selected visit
+import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { ApiResponse } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
+import { Alert, Button, Grid, Group, LoadingOverlay, NumberInput, Paper, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { useForm } from "@mantine/form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IconAlertCircle, IconScale } from "@tabler/icons-react";
+import dayjs from "dayjs";
+import { notifications } from "@mantine/notifications";
+// --- REMOVED VisitSelector ---
 
-// Create a client
-const queryClient = new QueryClient();
+// Define the shape of the plate data we get from the API
+type SimplePlate = {
+    id: string;
+    createdAt: string;
+    netWeightGrams: string;
+    calculatedCost: string;
+    notes: string | null;
+    weighedBy: { name: string };
+};
 
- // --- Demo Configuration ---
-const PLATE_TARE_WEIGHT_GRAMS = 150; // Example tare weight (use number)
-const BUFFET_PRICE_PER_KG = 60.00; // Example R$ 60/kg (use number)
+// --- Form Values ---
+interface WeighFormValues {
+    totalWeightGrams: string;
+    tareWeightGrams: string;
+    pricePerKg: string;
+    notes: string;
+}
 
-// Wrapper for React Query
-export default function WeighStationPageWrapper() {
+// --- Recent Plates Table ---
+function RecentPlatesTable({ plates, isLoading }: { plates: SimplePlate[] | undefined, isLoading: boolean }) {
+    const rows = plates?.map((plate) => (
+        <Table.Tr key={plate.id}>
+            <Table.Td>{dayjs(plate.createdAt).format('HH:mm:ss')}</Table.Td>
+            {/* --- REMOVED Client Column --- */}
+            <Table.Td>{parseFloat(plate.netWeightGrams).toFixed(2)} g</Table.Td>
+            <Table.Td>{formatCurrency(parseFloat(plate.calculatedCost))}</Table.Td>
+            <Table.Td>{plate.weighedBy.name}</Table.Td>
+            <Table.Td>{plate.notes}</Table.Td>
+        </Table.Tr>
+    ));
+
     return (
-        <QueryClientProvider client={queryClient}>
-            <WeighStationPage/>
-        </QueryClientProvider>
+        <Paper withBorder p="md" mt="xl" style={{ position: 'relative' }}>
+            <LoadingOverlay visible={isLoading} />
+            <Title order={4} mb="md">Pratos Recentes</Title>
+            <Table.ScrollContainer minWidth={500}>
+                <Table striped highlightOnHover verticalSpacing="xs">
+                    <Table.Thead>
+                        <Table.Tr>
+                            <Table.Th>Hora</Table.Th>
+                            {/* --- REMOVED Client Header --- */}
+                            <Table.Th>Peso Líquido</Table.Th>
+                            <Table.Th>Custo</Table.Th>
+                            <Table.Th>Pesado por</Table.Th>
+                            <Table.Th>Notas</Table.Th>
+                        </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                        {rows && rows.length > 0 ? rows : (
+                            <Table.Tr>
+                                <Table.Td colSpan={5} c="dimmed" ta="center">
+                                    Nenhum prato pesado recentemente.
+                                </Table.Td>
+                            </Table.Tr>
+                        )}
+                    </Table.Tbody>
+                </Table>
+            </Table.ScrollContainer>
+        </Paper>
     );
 }
 
-// Main page component
-function WeighStationPage() {
-    const internalQueryClient = useQueryClient();
-    const [selectedVisit, setSelectedVisit] = useState<ActiveVisitResponse | null>(null);
-    const [totalWeight, setTotalWeight] = useState<number | string>(''); // Input from scale
-    const [imageUrl, setImageUrl] = useState<string | null>(null); // Placeholder for image capture
+// --- Main Weigh Station Page ---
+export default function WeighStationPage() {
+    const queryClient = useQueryClient();
+    // --- REMOVED selectedVisitId state ---
 
-    const netWeight = typeof totalWeight === 'number' && totalWeight > PLATE_TARE_WEIGHT_GRAMS
-                       ? totalWeight - PLATE_TARE_WEIGHT_GRAMS
-                       : 0;
-    const calculatedCost = netWeight > 0 ? (netWeight / 1000) * BUFFET_PRICE_PER_KG : 0;
-
-    // Mutation to record the plate
-    const recordPlate = useMutation<ApiResponse, Error, { visitId: string; totalWeightGrams: number; imageUrl?: string | null }>({
-         mutationFn: async (data) => {
-             const response = await fetch("/api/plates", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(data),
-             });
-             const result: ApiResponse = await response.json();
-             if (!response.ok || !result.success) {
-                 throw new Error(result.error || "Falha ao registrar prato");
-             }
-             return result;
-         },
-         onSuccess: (data) => {
-             notifications.show({
-                 title: "Prato Registrado",
-                 message: `Custo de ${formatCurrency(calculatedCost)} adicionado à visita de ${selectedVisit?.client?.name}.`,
-                 color: "green"
-             });
-             // Reset form
-             setSelectedVisit(null);
-             setTotalWeight('');
-             setImageUrl(null);
-             // Invalidate visit queries if necessary (e.g., live data)
-             internalQueryClient.invalidateQueries({ queryKey: ['liveData'] }); // Example
-             // Maybe invalidate client details if that page shows plate history?
-             if (selectedVisit) {
-                  internalQueryClient.invalidateQueries({ queryKey: ['clientDetails', selectedVisit.clientId] });
-             }
-         },
-         onError: (error) => {
-              notifications.show({ title: "Erro", message: error.message, color: "red" });
-         }
+    const form = useForm<WeighFormValues>({
+        initialValues: {
+            totalWeightGrams: '',
+            tareWeightGrams: '300', // Default tare
+            pricePerKg: '69.90', // Default price
+            notes: '',
+        },
     });
 
-    const handleCaptureImage = () => {
-        // Placeholder: In a real app, this would trigger camera hardware/API
-        setImageUrl(`https://placehold.co/300x200?text=Simulacao+Foto+${Date.now()}`);
-        notifications.show({ title: "Simulação", message: "Imagem capturada (simulado).", color: "blue" });
-    }
+    // --- Calculate derived values ---
+    const totalWeight = parseFloat(form.values.totalWeightGrams) || 0;
+    const tareWeight = parseFloat(form.values.tareWeightGrams) || 0;
+    const pricePerKg = parseFloat(form.values.pricePerKg) || 0;
+    const netWeight = Math.max(0, totalWeight - tareWeight);
+    const calculatedCost = (netWeight / 1000) * pricePerKg; // (g / 1000) * price/kg
 
-    const handleRecordPlate = () => {
-        if (!selectedVisit) {
-             notifications.show({ title: "Erro", message: "Selecione a visita do cliente.", color: "orange" });
-             return;
-        }
-         if (typeof totalWeight !== 'number' || totalWeight <= PLATE_TARE_WEIGHT_GRAMS) {
-             notifications.show({ title: "Erro", message: `Peso total inválido (deve ser maior que ${PLATE_TARE_WEIGHT_GRAMS}g).`, color: "orange" });
-             return;
+    // --- Data fetching ---
+    const { data: platesData, isLoading: isLoadingPlates } = useQuery<SimplePlate[]>({
+        queryKey: ['recentPlates'],
+        queryFn: () =>
+            fetch('/api/plates').then(res => res.json()).then(data => {
+                if (!data.success) throw new Error(data.error || "Failed to fetch plates");
+                return data.data;
+            }),
+        refetchInterval: 10000, // Refetch every 10 seconds
+    });
+
+    // --- Data mutation ---
+    const mutation = useMutation({
+        mutationFn: (newPlate: any) =>
+            fetch('/api/plates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newPlate),
+            }).then(res => res.json().then(data => {
+                if (!data.success) throw new Error(data.error || "Failed to save plate");
+                return data.data;
+            })),
+        onSuccess: () => {
+            notifications.show({
+                title: 'Prato Registrado!',
+                message: `Custo: ${formatCurrency(calculatedCost)}`,
+                color: 'green',
+            });
+            form.reset(); // Reset form
+            queryClient.invalidateQueries({ queryKey: ['recentPlates'] });
+        },
+        onError: (error: Error) => {
+            notifications.show({
+                title: 'Erro ao registrar prato',
+                message: error.message,
+                color: 'red',
+            });
+        },
+    });
+
+    const handleSubmit = (values: WeighFormValues) => {
+        // --- REMOVED Visit Check ---
+
+        if (netWeight <= 0) {
+            notifications.show({
+                title: 'Peso inválido',
+                message: 'Peso líquido deve ser positivo.',
+                color: 'orange',
+            });
+            return;
         }
 
-        recordPlate.mutate({
-            visitId: selectedVisit.id,
+        mutation.mutate({
+            // --- REMOVED visitId ---
             totalWeightGrams: totalWeight,
-            imageUrl: imageUrl,
+            tareWeightGrams: tareWeight,
+            calculatedCost: calculatedCost,
+            notes: values.notes || null,
         });
-    }
-
-    const canRecord = selectedVisit && typeof totalWeight === 'number' && totalWeight > PLATE_TARE_WEIGHT_GRAMS;
+    };
 
     return (
-        <Container fluid>
-            <Stack gap="lg">
-                <PageHeader title="Estação de Pesagem (Buffet)" />
+        <>
+            <PageHeader title="Estação de Pesagem" />
+            
+            <Grid>
+                {/* --- Weighing Form --- */}
+                <Grid.Col span={{ base: 12, md: 5 }}>
+                    <Paper withBorder shadow="md" p="md">
+                        <form onSubmit={form.onSubmit(handleSubmit)}>
+                            <Stack>
+                                <Title order={3}>Registrar Prato</Title>
+                                {/* --- REMOVED VisitSelector --- */}
+                                
+                                <NumberInput
+                                    label="Preço por Kg (R$)"
+                                    placeholder="69.90"
+                                    decimalScale={2}
+                                    fixedDecimalScale
+                                    step={1}
+                                    {...form.getInputProps('pricePerKg')}
+                                />
+                                <NumberInput
+                                    label="Tara do Prato (g)"
+                                    placeholder="300"
+                                    decimalScale={2}
+                                    step={1}
+                                    {...form.getInputProps('tareWeightGrams')}
+                                />
+                                <NumberInput
+                                    label="Peso Total (g)"
+                                    placeholder="Insira o peso da balança"
+                                    decimalScale={2}
+                                    required
+                                    {...form.getInputProps('totalWeightGrams')}
+                                />
+                                <TextInput
+                                    label="Notas (Opcional)"
+                                    placeholder="Ex: Prato quebrou, teste"
+                                    {...form.getInputProps('notes')}
+                                />
 
-                <Grid gutter="lg">
-                    {/* Column 1: Input & Visit Selection */}
-                    <Grid.Col span={{ base: 12, md: 6 }}>
-                         <Paper withBorder p="md" radius="md">
-                             <Stack>
-                                 <Title order={4}>Registrar Prato</Title>
-                                 {/* Reuse VisitSelector from POS */}
-                                  <VisitSelector
-                                      selectedVisit={selectedVisit}
-                                      onVisitSelect={setSelectedVisit}
-                                  />
-                                  <NumberInput
-                                      required
-                                      label="Peso Total da Balança (g)"
-                                      placeholder="Ex: 650"
-                                      min={0}
-                                      step={1}
-                                      allowDecimal={false} // Usually scales read integers for grams
-                                      value={totalWeight}
-                                      onChange={setTotalWeight}
-                                      mt="md"
-                                      rightSection={<IconScale size={16}/>}
-                                  />
-                                  <Button
-                                      leftSection={<IconCamera size={16}/>}
-                                      variant="outline"
-                                      onClick={handleCaptureImage}
-                                      // disabled // Enable if camera integration is added
-                                      mt="sm"
-                                  >
-                                      Capturar Imagem (Simulado)
-                                  </Button>
-                             </Stack>
-                         </Paper>
-                    </Grid.Col>
+                                {/* --- Summary --- */}
+                                <Paper withBorder p="sm" radius="md" bg="blue.0">
+                                    <Stack gap="xs">
+                                        <Group justify="space-between">
+                                            <Text>Peso Líquido:</Text>
+                                            <Text fw={700} size="lg">{netWeight.toFixed(2)} g</Text>
+                                        </Group>
+                                        <Group justify="space-between">
+                                            <Text>Custo Final:</Text>
+                                            <Text fw={700} size="lg" c="blue.7">
+                                                {formatCurrency(calculatedCost)}
+                                            </Text>
+                                        </Group>
+                                    </Stack>
+                                </Paper>
 
-                     {/* Column 2: Calculation & Confirmation */}
-                     <Grid.Col span={{ base: 12, md: 6 }}>
-                         <Paper withBorder p="md" radius="md" bg="dark.6">
-                              <Stack align="center">
-                                  <Title order={4}>Cálculo</Title>
-                                  <Group>
-                                    <Text>Peso Total:</Text>
-                                    <Text fw={500}>{typeof totalWeight === 'number' ? `${totalWeight} g` : '--'}</Text>
-                                  </Group>
-                                   <Group>
-                                    <Text>Peso Prato (Tara):</Text>
-                                    <Text fw={500}>{PLATE_TARE_WEIGHT_GRAMS} g</Text>
-                                  </Group>
-                                  <Group>
-                                    <Text>Peso Líquido:</Text>
-                                    <Text fw={700} size="lg">{netWeight > 0 ? `${netWeight.toFixed(0)} g` : '--'}</Text>
-                                  </Group>
-                                   <Group>
-                                    <Text>Preço/kg:</Text>
-                                    <Text fw={500}>{formatCurrency(BUFFET_PRICE_PER_KG)}</Text>
-                                  </Group>
-                                  <Box ta="center" mt="md">
-                                      <Text>Custo Calculado:</Text>
-                                      <Text fw={700} size="xl" c="green.4">{netWeight > 0 ? formatCurrency(calculatedCost) : formatCurrency(0)}</Text>
-                                  </Box>
+                                <Button
+                                    type="submit"
+                                    size="lg"
+                                    leftSection={<IconScale size={20} />}
+                                    loading={mutation.isPending}
+                                >
+                                    Registrar Prato
+                                </Button>
+                            </Stack>
+                        </form>
+                    </Paper>
+                </Grid.Col>
 
-                                  {imageUrl && (
-                                       <Image src={imageUrl} maw={200} radius="sm" mt="sm" alt="Foto do Prato"/>
-                                  )}
-
-                                  <Button
-                                      mt="lg"
-                                      size="lg"
-                                      color="green"
-                                      fullWidth
-                                      onClick={handleRecordPlate}
-                                      disabled={!canRecord || recordPlate.isPending}
-                                      loading={recordPlate.isPending}
-                                  >
-                                      Registrar Prato e Adicionar à Comanda
-                                  </Button>
-
-                              </Stack>
-                         </Paper>
-                     </Grid.Col>
-                </Grid>
-
-            </Stack>
-        </Container>
+                {/* --- Recent Plates --- */}
+                <Grid.Col span={{ base: 12, md: 7 }}>
+                    <RecentPlatesTable plates={platesData} isLoading={isLoadingPlates} />
+                </Grid.Col>
+            </Grid>
+        </>
     );
 }

@@ -63,8 +63,10 @@ model Client {
 
   // Relations
   visits        Visit[]
-  wallet        ClientWallet? // One-to-one with ClientWallet
-  plates        ClientPlate[] // Plates associated with the client
+  wallet        ClientWallet?     // One-to-one with ClientWallet
+  // ---- START FIX ----
+  // plates        ClientPlate[] // REMOVED: Plates are no longer directly tied to clients
+  // ---- END FIX ----
   transactions  WalletTransaction[] @relation("ClientTransactions") // Direct link to transactions
 
   @@map("clients")
@@ -78,7 +80,7 @@ model ClientWallet {
   balance   Decimal  @default(0.00) @db.Decimal(10, 2)
 
   // Relations
-  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client        Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   transactions  WalletTransaction[] @relation("WalletTransactions") // Transactions belonging to this wallet
 
   @@map("client_wallets")
@@ -133,10 +135,12 @@ model Visit {
   client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   tabId        String?   // If using RFID tabs
   tab          Tab?      @relation(fields: [tabId], references: [id], onDelete: SetNull)
-  venueObjectId String?  // Where the client is seated/checked-in (Table, Bar Seat, etc.)
+  venueObjectId String?    // Where the client is seated/checked-in (Table, Bar Seat, etc.)
   venueObject  VenueObject? @relation(fields: [venueObjectId], references: [id], onDelete: SetNull)
   orders       Order[]
-  plates       ClientPlate[] // Plates created during this visit
+  // ---- START FIX ----
+  // plates       ClientPlate[] // REMOVED: Plates are no longer tied to visits
+  // ---- END FIX ----
   serverCalls  ServerCall[] // Added opposite field
 
   @@index([clientId])
@@ -435,7 +439,7 @@ model PrepTask {
   targetQuantity  Decimal        @db.Decimal(10, 4) // Desired output quantity
   quantityRun     Decimal?       @db.Decimal(10, 4) // Actual output quantity (set on completion)
   status          PrepTaskStatus @default(PENDING)
-  assignedToUserId String?       // Who is assigned to do it
+  assignedToUserId String?        // Who is assigned to do it
   assignedAt      DateTime?      // When it was assigned
   startedAt       DateTime?      // When work began
   completedAt     DateTime?      // When work finished
@@ -507,7 +511,7 @@ model OrderItem {
   unitPrice     Decimal  @db.Decimal(10, 2) // Price per unit at time of order
   totalPrice    Decimal  @db.Decimal(10, 2) // quantity * unitPrice
   status        OrderItemStatus @default(PENDING) // Status for this specific item
-  notes         String? // e.g., "No onions"
+  notes         String?  // e.g., "No onions"
   workstationId String   // Which workstation should prepare this?
 
   // Relations
@@ -556,9 +560,9 @@ model ServerCall {
   venueObjectId   String           // Where the call originated (Table, Bar Seat)
   visitId         String           // Which visit initiated the call
   status          ServerCallStatus @default(PENDING)
-  acknowledgedById String?         // Staff user who acknowledged
+  acknowledgedById String?          // Staff user who acknowledged
   acknowledgedAt  DateTime?
-  resolvedById    String?         // Staff user who resolved
+  resolvedById    String?          // Staff user who resolved
   resolvedAt      DateTime?
   notes           String?
 
@@ -735,8 +739,8 @@ model BuffetPan {
 model ClientPlate {
   id                String   @id @default(cuid())
   createdAt         DateTime @default(now())
-  visitId           String
-  clientId          String   // Denormalized
+  // visitId           String   // REMOVED
+  // clientId          String   // REMOVED
   weighedById       String   // User who operated the scale
   totalWeightGrams  Decimal  @db.Decimal(10, 2) // Gross weight from scale
   tareWeightGrams   Decimal  @db.Decimal(10, 2) // Tare weight of the plate used
@@ -747,12 +751,13 @@ model ClientPlate {
   notes             String?
 
   // Relations
-  visit             Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  // visit             Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade) // REMOVED
+  // client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade) // REMOVED
   weighedBy         User     @relation("WeighedBy", fields: [weighedById], references: [id], onDelete: Restrict)
 
-  @@index([visitId])
-  @@index([clientId, createdAt])
+  // @@index([visitId]) // REMOVED
+  // @@index([clientId, createdAt]) // REMOVED
+  @@index([createdAt]) // ADDED simple index on createdAt
   @@map("client_plates")
 }
 
