@@ -1,5 +1,6 @@
 // PATH: lib/utils.ts
 import { PrepTaskStatus } from "@prisma/client";
+import { NextResponse } from 'next/server';
 
 /**
  * Formats a number as BRL (Brazilian Reais) currency.
@@ -41,4 +42,15 @@ export function getStatusInfo(status: PrepTaskStatus | 'default') {
 
 export function toUTC(date: Date): Date {
   return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
+export function handleApiError(error: unknown, message: string) {
+  console.error(message, error);
+
+  const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+
+  return NextResponse.json(
+    { error: message, details: errorMessage },
+    { status: 500 }
+  );
 }

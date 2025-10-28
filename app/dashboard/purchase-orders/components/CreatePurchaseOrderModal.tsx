@@ -20,10 +20,10 @@ import {
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import 'dayjs/locale/pt-br';
-import { useForm, formList } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { randomId } from "@mantine/hooks";
-import { Supplier, Ingredient } from "@prisma/client";
+import type { PurchaseOrder, Supplier, Ingredient } from '@prisma/client';
 import { SerializedIngredientDef } from "@/lib/types"; // Import Ingredient type for dropdown
 import { IconTrash } from "@tabler/icons-react";
 import { formatCurrency } from "@/lib/utils";
