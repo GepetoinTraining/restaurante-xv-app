@@ -1,8 +1,9 @@
 // PATH: app/api/prep-tasks/[id]/route.ts
 import { prisma } from "@/lib/prisma";
-import { ApiResponse, SerializedPrepTask } from "@/lib/types"; // Import SerializedPrepTask
+import { ApiResponse, SerializedPrepTask } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { PrepTask, Prisma, PrepTaskStatus } from "@prisma/client"; // Added PrepTaskStatus
+// Import all needed models for typing
+import { PrepTask, Prisma, PrepTaskStatus, Ingredient, PrepRecipe, User, VenueObject } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
@@ -16,6 +17,30 @@ type PrepTaskUpdateInput = {
     assignedToUserId?: string | null; // For assigning/unassigning
     quantityRun?: string | number | null; // For completing
 }
+
+// --- START FIX: Define payload type ---
+// Define the include object once
+const prepTaskInclude = {
+    prepRecipe: {
+        select: {
+            id: true,
+            name: true,
+            outputIngredient: { select: { name: true, unit: true } },
+            estimatedLaborTime: true,
+            outputQuantity: true
+        }
+    },
+    assignedTo: { select: { id: true, name: true } },
+    executedBy: { select: { id: true, name: true } },
+    location: { select: { id: true, name: true } },
+};
+
+// Define the type of the task returned by the update
+type UpdatedPrepTask = Prisma.PrepTaskGetPayload<{
+    include: typeof prepTaskInclude
+}>;
+// --- END FIX ---
+
 
 /**
  * PATCH /api/prep-tasks/[id]
@@ -47,12 +72,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                         inputs: { include: { ingredient: true } },
                         outputIngredient: true
                     }
-                }
+                },
+                location: true, // Include location for stock logic
+                assignedTo: true // Include for status change logic
             }
         });
 
         if (!task) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Tarefa de preparo não encontrada." }, { status: 404 });
+        }
+        // Ensure location is loaded for stock logic
+        if (!task.location) {
+             return NextResponse.json<ApiResponse>({ success: false, error: "Localização da tarefa (locationId) não encontrada." }, { status: 500 });
         }
 
         // --- Authorization and State Transition Logic ---
@@ -70,14 +101,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                 if (!['MANAGER', 'OWNER'].includes(userRole)) {
                     return NextResponse.json<ApiResponse>({ success: false, error: "Apenas Gerentes ou Donos podem atribuir tarefas." }, { status: 403 });
                 }
-                if (!assignedToUserId) {
+                if (!assignedToUserId) { // Use the destructured variable
                      return NextResponse.json<ApiResponse>({ success: false, error: "Usuário para atribuição não fornecido." }, { status: 400 });
                 }
                 // Validate assigned user exists
                 const assignedUser = await prisma.user.findUnique({ where: { id: assignedToUserId }});
                 if (!assignedUser) return NextResponse.json<ApiResponse>({ success: false, error: "Usuário atribuído não encontrado." }, { status: 404 });
 
-                updateData.assignedToUserId = assignedToUserId;
+                // --- START FIX: Use relational update ---
+                updateData.assignedTo = { connect: { id: assignedToUserId } };
+                // --- END FIX ---
                 updateData.assignedAt = new Date();
                 break;
 
@@ -85,7 +118,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                 // Assigned user starts the task OR user claims a PENDING task
                 if (currentStatus === PrepTaskStatus.PENDING) {
                     // Claiming
-                    updateData.assignedToUserId = userId; // Claim for self
+                    // --- START FIX: Use relational update ---
+                    updateData.assignedTo = { connect: { id: userId } }; // Claim for self
+                    // --- END FIX ---
                     updateData.assignedAt = new Date();
                     updateData.startedAt = new Date();
                 } else if (currentStatus === PrepTaskStatus.ASSIGNED) {
@@ -94,10 +129,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                          return NextResponse.json<ApiResponse>({ success: false, error: "Você não pode iniciar uma tarefa atribuída a outro usuário." }, { status: 403 });
                     }
                      updateData.startedAt = new Date();
-                     // Ensure assignedToUserId remains if manager starts it for someone else
-                     if (!updateData.assignedToUserId) updateData.assignedToUserId = task.assignedToUserId;
+                     // Ensure assignedTo user ID is set if not already
+                     if (!task.assignedToUserId) {
+                         // This case should be rare if logic is correct, but good to have
+                         updateData.assignedTo = { connect: { id: userId } };
+                     }
                 } else {
-                     return NextResponse.json<ApiResponse>({ success: false, error: `Não é possível iniciar uma tarefa com status ${currentStatus}.` }, { status: 400 });
+                     return NextResponse.json<ApiResponse>({ success: false, error: `Não é possível iniciar una tarefa com status ${currentStatus}.` }, { status: 400 });
                 }
                 break;
 
@@ -116,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                 // Validate quantity produced
                 try {
                     quantityRunDecimal = new Decimal(quantityRun);
-                    if (quantityRunDecimal.isNegative()) { // Allow zero? Maybe for waste reporting later. For now, positive.
+                    if (quantityRunDecimal.isNegative()) {
                         throw new Error("Quantidade produzida deve ser zero ou positiva.");
                     }
                 } catch (e: any) {
@@ -125,23 +163,24 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
                 updateData.quantityRun = quantityRunDecimal;
                 updateData.completedAt = new Date();
-                updateData.executedById = userId; // User who marked as complete
+                // --- START FIX: Use relational update ---
+                updateData.executedBy = { connect: { id: userId } }; // User who marked as complete
+                // --- END FIX ---
                 requiresStockTransaction = true; // Trigger stock logic
                 break;
 
             case PrepTaskStatus.CANCELLED:
                  // Manager/Owner can cancel PENDING or ASSIGNED tasks
-                 if (![PrepTaskStatus.PENDING, PrepTaskStatus.ASSIGNED].includes(currentStatus)) {
+                 // --- START FIX: Use type-safe check ---
+                 if (currentStatus !== PrepTaskStatus.PENDING && currentStatus !== PrepTaskStatus.ASSIGNED) {
+                 // --- END FIX ---
                      return NextResponse.json<ApiResponse>({ success: false, error: `Não é possível cancelar uma tarefa com status ${currentStatus}.` }, { status: 400 });
                  }
                  if (!['MANAGER', 'OWNER'].includes(userRole)) {
                      return NextResponse.json<ApiResponse>({ success: false, error: "Apenas Gerentes ou Donos podem cancelar tarefas." }, { status: 403 });
                  }
-                 // Maybe add a reason field later?
-                 // updateData.notes = "Cancelled: " + (reason || "");
                  break;
 
-            // Add case for PENDING if needed (e.g., manager unassigning)
             case PrepTaskStatus.PENDING:
                 // Manager/Owner unassigns an ASSIGNED task
                 if (currentStatus !== PrepTaskStatus.ASSIGNED) {
@@ -150,7 +189,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                  if (!['MANAGER', 'OWNER'].includes(userRole)) {
                     return NextResponse.json<ApiResponse>({ success: false, error: "Apenas Gerentes ou Donos podem remover atribuição." }, { status: 403 });
                 }
-                updateData.assignedToUserId = null;
+                // --- START FIX: Use relational update ---
+                updateData.assignedTo = { disconnect: true };
+                // --- END FIX ---
                 updateData.assignedAt = null;
                 break;
 
@@ -161,17 +202,23 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
 
         // --- Execute Update (with or without stock transaction) ---
-        let updatedTask: PrepTask;
+        // --- START FIX: Use correct type ---
+        let updatedTask: UpdatedPrepTask;
+        // --- END FIX ---
 
         if (requiresStockTransaction && quantityRunDecimal !== null) {
              // ** Perform stock update within a transaction **
              const finalQuantityRun = quantityRunDecimal; // Capture for use inside transaction
              updatedTask = await prisma.$transaction(async (tx) => {
-                 // --- Stock Deduction Logic (Copied and adapted from old POST /prep-tasks) ---
-                 const runs = finalQuantityRun.dividedBy(task.prepRecipe.outputQuantity); // Use actual quantity produced
-                 if (!task.prepRecipe.inputs) throw new Error("Detalhes da receita (inputs) não encontrados na tarefa."); // Should not happen
+                 // --- Stock Deduction Logic ---
+                 if (!task.prepRecipe?.outputQuantity) throw new Error("Detalhes da receita (outputQuantity) não encontrados na tarefa.");
+                 if (!task.prepRecipe?.inputs || task.prepRecipe.inputs.length === 0) throw new Error("Detalhes da receita (inputs) não encontrados na tarefa.");
+
+                 const runs = finalQuantityRun.dividedBy(task.prepRecipe.outputQuantity);
 
                  for (const input of task.prepRecipe.inputs) {
+                      if (!input.ingredient) throw new Error(`Detalhes do ingrediente de entrada (ID: ${input.ingredientId}) não encontrados.`);
+
                      const requiredQuantity = input.quantity.times(runs);
                      let deductedAmount = new Decimal(0);
                      const holdings = await tx.stockHolding.findMany({
@@ -180,20 +227,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                      });
                      for (const holding of holdings) {
                          const quantityToDeduct = Decimal.min(requiredQuantity.minus(deductedAmount), holding.quantity);
+                         if (quantityToDeduct.lte(0)) continue;
                          await tx.stockHolding.update({ where: { id: holding.id }, data: { quantity: { decrement: quantityToDeduct } } });
                          deductedAmount = deductedAmount.plus(quantityToDeduct);
                          if (deductedAmount.gte(requiredQuantity)) break;
                      }
                      if (deductedAmount.lt(requiredQuantity)) {
-                          // If completion is forced despite insufficient stock, log it but don't throw?
-                          // Or should completion fail? Let's make it fail.
                          throw new Error(`Estoque insuficiente de "${input.ingredient.name}" (${input.ingredient.unit}). Necessário: ${requiredQuantity.toFixed(3)}, Disponível: ${deductedAmount.toFixed(3)}.`);
                      }
                  }
                  // --- End Stock Deduction ---
 
-                 // --- Stock Addition Logic (Copied and adapted from old POST /prep-tasks) ---
-                 if (!task.prepRecipe.outputIngredient) throw new Error("Detalhes da receita (output) não encontrados na tarefa."); // Should not happen
+                 // --- Stock Addition Logic ---
+                 if (!task.prepRecipe.outputIngredientId) throw new Error("Detalhes da receita (outputIngredientId) não encontrados na tarefa."); // Check ID existence
+                 if (!task.prepRecipe.outputIngredient) throw new Error("Detalhes da receita (outputIngredient) não encontrados na tarefa."); // Check full object existence
 
                  const existingOutputHolding = await tx.stockHolding.findFirst({
                       where: { ingredientId: task.prepRecipe.outputIngredientId, venueObjectId: task.locationId },
@@ -201,21 +248,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                  // Calculate cost
                  let totalInputCost = new Decimal(0);
                   for (const input of task.prepRecipe.inputs) {
+                      if (!input.ingredient) throw new Error(`Detalhes do ingrediente de entrada (ID: ${input.ingredientId}) não encontrados para cálculo de custo.`);
                       const inputCost = input.ingredient.costPerUnit.times(input.quantity.times(runs));
                       totalInputCost = totalInputCost.plus(inputCost);
                   }
-                 const costPerOutputUnit = finalQuantityRun.isZero() ? new Decimal(0) : totalInputCost.dividedBy(finalQuantityRun); // Avoid division by zero
+                 const costPerOutputUnit = finalQuantityRun.isZero() ? new Decimal(0) : totalInputCost.dividedBy(finalQuantityRun);
 
                  if (existingOutputHolding) {
                      await tx.stockHolding.update({ where: { id: existingOutputHolding.id }, data: { quantity: { increment: finalQuantityRun } } });
-                 } else if (finalQuantityRun.gt(0)) { // Only create if quantity > 0
+                 } else if (finalQuantityRun.gt(0)) {
                       await tx.stockHolding.create({
                          data: {
                              ingredientId: task.prepRecipe.outputIngredientId,
                              venueObjectId: task.locationId,
                              quantity: finalQuantityRun,
                              costAtAcquisition: costPerOutputUnit,
-                             purchaseDate: new Date(), // Set production date as 'purchase' date for this batch
+                             purchaseDate: new Date(),
                          }
                      });
                  }
@@ -226,7 +274,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                 let totalValue = new Decimal(0);
                 let totalQuantity = new Decimal(0);
                 allHoldings.forEach(h => {
-                    const cost = h.costAtAcquisition ?? task.prepRecipe.outputIngredient.costPerUnit; // Fallback?
+                    if (!task.prepRecipe.outputIngredient) throw new Error("Detalhes do ingrediente de saída não encontrados para cálculo de custo médio.");
+                    const cost = h.costAtAcquisition ?? task.prepRecipe.outputIngredient.costPerUnit;
                     totalValue = totalValue.plus(h.quantity.times(cost));
                     totalQuantity = totalQuantity.plus(h.quantity);
                 });
@@ -237,16 +286,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
                  // --- Finally, update the task status itself ---
                  return await tx.prepTask.update({
                      where: { id: taskId },
-                     data: updateData, // Contains new status, completedAt, executedById, quantityRun
-                     include: { // Include data for response
-                         prepRecipe: { select: { id: true, name: true, outputIngredient: { select: { name: true, unit: true } }, estimatedLaborTime: true }},
-                         assignedTo: { select: { id: true, name: true } },
-                         executedBy: { select: { id: true, name: true } },
-                         location: { select: { id: true, name: true } },
-                     }
+                     data: updateData, // Contains new status, completedAt, executedBy, quantityRun
+                     // --- START FIX: Use include const ---
+                     include: prepTaskInclude
+                     // --- END FIX ---
                  });
              }, {
-                 maxWait: 15000, // Increased timeout for potentially complex stock logic
+                 maxWait: 15000,
                  timeout: 30000,
              }); // End Transaction
 
@@ -254,27 +300,33 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
              // Just update the task status without stock changes
              updatedTask = await prisma.prepTask.update({
                  where: { id: taskId },
-                 data: updateData, // Contains new status and potentially assignedToUserId, startedAt etc.
-                 include: { // Include data for response
-                    prepRecipe: { select: { id: true, name: true, outputIngredient: { select: { name: true, unit: true } }, estimatedLaborTime: true }},
-                    assignedTo: { select: { id: true, name: true } },
-                    executedBy: { select: { id: true, name: true } },
-                    location: { select: { id: true, name: true } },
-                 }
+                 data: updateData, // Contains new status and potentially assignedTo, startedAt etc.
+                 // --- START FIX: Use include const ---
+                 include: prepTaskInclude
+                 // --- END FIX ---
              });
         }
 
 
         // Serialize Decimals for response
+        // --- START FIX: This block should now work correctly ---
         const serializedTask: SerializedPrepTask = {
             ...updatedTask,
             targetQuantity: updatedTask.targetQuantity.toString(),
             quantityRun: updatedTask.quantityRun ? updatedTask.quantityRun.toString() : null,
+            prepRecipe: {
+                id: updatedTask.prepRecipe.id,
+                name: updatedTask.prepRecipe.name,
+                outputIngredient: updatedTask.prepRecipe.outputIngredient, // This is { name, unit } | null
+                estimatedLaborTime: updatedTask.prepRecipe.estimatedLaborTime,
+                outputQuantity: updatedTask.prepRecipe.outputQuantity.toString(),
+            },
             createdAt: updatedTask.createdAt.toISOString(),
             assignedAt: updatedTask.assignedAt?.toISOString() ?? null,
             startedAt: updatedTask.startedAt?.toISOString() ?? null,
             completedAt: updatedTask.completedAt?.toISOString() ?? null,
         };
+        // --- END FIX ---
 
         return NextResponse.json<ApiResponse<SerializedPrepTask>>(
             { success: true, data: serializedTask },
@@ -283,15 +335,18 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     } catch (error: any) {
         console.error(`Error updating prep task ${taskId}:`, error);
-        // Catch specific stock error from transaction
         if (error.message.startsWith('Estoque insuficiente')) {
-             return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 409 }); // 409 Conflict - stock issue
+             return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 409 });
         }
          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             return NextResponse.json<ApiResponse>({ success: false, error: "Tarefa ou registro relacionado não encontrado durante a atualização." }, { status: 404 });
+             return NextResponse.json<ApiResponse>({ success: false, error: "Tarefa ou registro relacionado não encontrado during a atualização." }, { status: 404 });
          }
-         if (error.message.includes('Transaction API error')) {
-            return NextResponse.json<ApiResponse>({ success: false, error: "Erro de transação. Verifique o estoque e tente novamente." }, { status: 500 });
+         if (error.message.includes('Transaction API error') || error.message.includes('timed out')) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Erro de transação ou tempo limite. Verifique o estoque e tente novamente." }, { status: 504 });
+         }
+          if (error.message.includes('não encontrados na tarefa') || error.message.includes('Detalhes do ingrediente') || error.message.includes('Localização da tarefa')) {
+             console.error("Data inconsistency error:", error.message);
+             return NextResponse.json<ApiResponse>({ success: false, error: `Erro de dados internos: ${error.message}` }, { status: 500 });
          }
         return NextResponse.json<ApiResponse>(
             { success: false, error: `Erro interno do servidor ao atualizar tarefa: ${error.message}` },

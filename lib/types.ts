@@ -145,19 +145,26 @@ export type SerializedPrepRecipe = Omit<PrismaPrepRecipe, 'outputQuantity' | 'in
 };
 
 // Prep Task Record (as returned by API, more detailed for workflow)
-export type SerializedPrepTask = Omit<PrismaPrepTask, 'quantityRun' | 'targetQuantity'> & {
+// ---- START FIX: Omit Date fields before re-defining as string ----
+export type SerializedPrepTask = Omit<PrismaPrepTask,
+    'quantityRun' | 'targetQuantity' | 'createdAt' | 'assignedAt' | 'startedAt' | 'completedAt'
+> & {
+// ---- END FIX ----
     quantityRun: string | null; // Stringified Decimal or null if not completed
     targetQuantity: string; // Stringified Decimal
     prepRecipe: {
         id: string;
         name: string;
-        outputIngredient: { name: string; unit: string };
+        outputIngredient: { name: string; unit: string } | null; // Match include
         estimatedLaborTime: number | null;
+        // ---- START FIX: Add missing property ----
+        outputQuantity: string;
+        // ---- END FIX ----
     };
     assignedTo: { id: string; name: string } | null;
     executedBy: { id: string; name: string } | null;
     location: { id: string; name: string };
-    // Timestamps are already ISO strings
+    // Timestamps are now correctly typed as string
     createdAt: string;
     assignedAt: string | null;
     startedAt: string | null;
