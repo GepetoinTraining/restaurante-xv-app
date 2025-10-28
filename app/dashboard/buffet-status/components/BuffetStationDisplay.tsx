@@ -3,7 +3,7 @@
 
 import { Paper, Title, Stack, Group, Text, Progress, Badge, Button, Tooltip } from "@mantine/core";
 // ---- START FIX: Import from lib/types instead of API route ----
-import { BuffetStationWithPans, SerializedBuffetPan, StorageLocation } from "@/lib/types";
+import { BuffetStationWithPans, SerializedservingPan, StorageLocation } from "@/lib/types";
 // ---- END FIX ----
 import { IconToolsKitchen2, IconRefresh } from "@tabler/icons-react"; // Changed icon
 import { useState } from "react";
@@ -16,9 +16,9 @@ type BuffetStationProps = {
 };
 
 export function BuffetStationDisplay({ station, storageLocations, onRefresh }: BuffetStationProps) {
-    const [selectedPan, setSelectedPan] = useState<SerializedBuffetPan | null>(null);
+    const [selectedPan, setSelectedPan] = useState<SerializedservingPan | null>(null);
 
-    const handleRefillClick = (pan: SerializedBuffetPan) => {
+    const handleRefillClick = (pan: SerializedservingPan) => {
         if (pan.ingredient) {
             setSelectedPan(pan);
         }

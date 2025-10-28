@@ -6,10 +6,10 @@ import { Modal, Button, Stack, LoadingOverlay, Select, NumberInput, Text, Title,
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { ApiResponse, StorageLocation } from "@/lib/types";
-import { BuffetPan } from "@prisma/client"; // Import base type
+import { servingPan } from "@prisma/client"; // Import base type
 
 // Type matching the pan passed from BuffetStationDisplay
-type PanToRefill = (Omit<BuffetPan, 'currentQuantity' | 'capacity'> & {
+type PanToRefill = (Omit<servingPan, 'currentQuantity' | 'capacity'> & {
         currentQuantity: string;
         capacity: string;
         ingredient: { id: string; name: string; unit: string; } | null;

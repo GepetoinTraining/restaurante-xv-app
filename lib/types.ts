@@ -15,7 +15,7 @@ import {
     WalletTransaction, // Added WalletTransaction here for ClientWalletStringBalance
     VenueObjectType, // Added VenueObjectType
     PrepTaskStatus,
-    BuffetPan,
+    servingPan,
     BuffetStation,
     CompanyClient,
     Delivery,
@@ -246,7 +246,7 @@ export type SerializedWalletTransaction = Omit<WalletTransaction, 'amount'> & {
     amount: string;
 };
 
-export type SerializedBuffetPan = Omit<BuffetPan, 'currentQuantity' | 'capacity'> & {
+export type SerializedservingPan = Omit<servingPan, 'currentQuantity' | 'capacity'> & {
     currentQuantity: string;
     capacity: string;
     ingredient: {
@@ -257,7 +257,7 @@ export type SerializedBuffetPan = Omit<BuffetPan, 'currentQuantity' | 'capacity'
 };
 
 export type BuffetStationWithPans = Omit<BuffetStation, 'pans'> & {
-    pans: SerializedBuffetPan[];
+    pans: SerializedservingPan[];
 };
 
 // Type returned by GET /api/serving-pans/by-identifier/[id]

@@ -3,13 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { BuffetStation, BuffetPan, Ingredient, Prisma } from "@prisma/client";
+import { BuffetStation, servingPan, Ingredient, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
 // Define the expected response structure including pans and ingredients
 // Quantities and capacities will be serialized strings
 export type BuffetStationWithPans = BuffetStation & {
-    pans: (Omit<BuffetPan, 'currentQuantity' | 'capacity'> & {
+    pans: (Omit<servingPan, 'currentQuantity' | 'capacity'> & {
         currentQuantity: string;
         capacity: string;
         ingredient: Pick<Ingredient, 'id' | 'name' | 'unit'> | null; // Include ingredient details

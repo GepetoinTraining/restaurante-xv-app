@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         // --- Transaction: Find Pan, Deduct Stock, Update Pan ---
         const updatedPan = await prisma.$transaction(async (tx) => {
             // 1. Get Pan details (including ingredientId and capacity)
-            const pan = await tx.buffetPan.findUnique({
+            const pan = await tx.servingPan.findUnique({
                 where: { id: panId },
                 // ---- START FIX ----
                 // Include ingredient details *including costPerUnit*
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
                 throw new Error(`Estoque insuficiente de "${pan.ingredient.name}" na origem. Necessário: ${requiredQuantity.toString()}, Disponível: ${deductedAmount.toString()}.`);
             }
 
-            // 3. Update BuffetPan quantity
+            // 3. Update servingPan quantity
             return await tx.ServingPan.update({
                 where: { id: panId },
                 data: {
