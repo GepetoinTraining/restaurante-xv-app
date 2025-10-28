@@ -2,7 +2,9 @@
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { WasteRecord, Prisma, StockHolding } from "@prisma/client";
+// ---- START FIX: Import WasteReason ----
+import { WasteRecord, Prisma, StockHolding, WasteReason } from "@prisma/client";
+// ---- END FIX ----
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
@@ -11,16 +13,18 @@ type WasteInput = {
     ingredientId: string;
     venueObjectId: string; // Location where waste occurred/was deducted from
     quantity: string | number;
-    reason: string; // e.g., 'Expired', 'Spoiled', 'Dropped', 'Burnt', 'Contaminated', 'Other'
+    reason: WasteReason; // e.g., 'SPOILAGE', 'PREPARATION', 'ACCIDENT'
     notes?: string;
 }
 
 // Type for the API response (includes calculated cost)
-type WasteRecordResponse = Omit<WasteRecord, 'quantity' | 'cost'> & {
+// ---- START FIX: Match schema fields ----
+type WasteRecordResponse = Omit<WasteRecord, 'quantity' | 'costValue'> & {
     quantity: string;
-    cost: string;
-    ingredient: { name: string; unit: string };
-    location: { name: string };
+    costValue: string;
+// ---- END FIX ----
+    ingredient: { name: string; unit: string } | null; // Can be null
+    // location: { name: string }; // Location is not a direct relation in schema
     recordedBy: { name: string };
 };
 
@@ -31,7 +35,6 @@ type WasteRecordResponse = Omit<WasteRecord, 'quantity' | 'cost'> & {
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    // Allow roles that handle inventory or manage operations
     if (!session.user?.isLoggedIn || !['COOK', 'BARTENDER', 'MANAGER', 'OWNER'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
@@ -48,6 +51,13 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // ---- START FIX: Validate reason against enum ----
+        if (!Object.values(WasteReason).includes(reason)) {
+             return NextResponse.json<ApiResponse>( { success: false, error: "Motivo inválido." }, { status: 400 });
+        }
+        // ---- END FIX ----
+
+
         let quantityDecimal: Decimal;
         try {
             quantityDecimal = new Decimal(quantity);
@@ -58,13 +68,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json<ApiResponse>( { success: false, error: `Formato de quantidade inválido: ${e.message}` }, { status: 400 });
         }
 
-        if (String(reason).trim().length === 0) {
-             return NextResponse.json<ApiResponse>( { success: false, error: "Motivo não pode ser vazio." }, { status: 400 });
-        }
-
         // --- Transaction: Find holdings, Deduct stock, Calculate cost, Create record ---
         const [wasteRecord] = await prisma.$transaction(async (tx) => {
-            // 1. Find Ingredient details (for unit and average cost fallback)
+            // 1. Find Ingredient details
             const ingredient = await tx.ingredient.findUnique({
                  where: { id: ingredientId },
                  select: { name: true, unit: true, costPerUnit: true }
@@ -75,13 +81,11 @@ export async function POST(req: NextRequest) {
             const holdings = await tx.stockHolding.findMany({
                 where: {
                     ingredientId: ingredientId,
-                    venueObjectId: venueObjectId,
-                    quantity: { gt: 0 } // Only consider holdings with stock
+                    venueObjectId: venueObjectId, // venueObjectId is correct for StockHolding
+                    quantity: { gt: 0 }
                 },
                 orderBy: {
-                    // Decide deduction logic: FIFO (oldest first) or LIFO (newest first)?
-                    // FIFO is generally preferred for food inventory.
-                    createdAt: 'asc'
+                    createdAt: 'asc' // FIFO
                 }
             });
 
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
                 if (remainingToDeduct.isZero()) break;
 
                 const quantityToDeductFromHolding = Decimal.min(remainingToDeduct, holding.quantity);
-                const costPerUnit = holding.costAtAcquisition ?? ingredient.costPerUnit; // Use batch cost if available, else average
+                const costPerUnit = holding.costAtAcquisition ?? ingredient.costPerUnit;
 
                 await tx.stockHolding.update({
                     where: { id: holding.id },
@@ -108,40 +112,45 @@ export async function POST(req: NextRequest) {
 
             // 4. Check if enough stock was available
             if (remainingToDeduct.gt(0)) {
-                // Not enough stock found across all batches at that location
                 throw new Error(`Estoque insuficiente de "${ingredient.name}" (${ingredient.unit}) na localização selecionada. Necessário: ${quantityDecimal.toString()}, Disponível: ${actualDeducted.toString()}.`);
             }
 
             // 5. Create the WasteRecord
+            // ---- START FIX: Match WasteRecord schema ----
             const record = await tx.wasteRecord.create({
                 data: {
+                    recordedById: userId, // Use recordedById
                     ingredientId: ingredientId,
-                    venueObjectId: venueObjectId,
-                    userId: userId,
-                    quantity: quantityDecimal, // The originally requested quantity
+                    // productId: null, // Set if you support wasting products
+                    // stockHoldingId: null, // Can't easily link to multiple holdings
+                    quantity: quantityDecimal, 
+                    unit: ingredient.unit, // Add the unit
                     reason: reason,
                     notes: notes,
-                    cost: totalCostOfWaste, // Calculated cost
+                    costValue: totalCostOfWaste, // Use costValue
                 },
-                include: { // Include related data for the response
+                include: { 
                     ingredient: { select: { name: true, unit: true } },
-                    location: { select: { name: true } },
+                    // location is not a direct relation on WasteRecord
                     recordedBy: { select: { name: true } },
                 }
             });
+            // ---- END FIX ----
 
             return [record];
         }, {
-             maxWait: 10000, // Slightly longer timeout
+             maxWait: 10000, 
              timeout: 20000,
         }); // End transaction
 
         // Serialize Decimals for the response
+        // ---- START FIX: Match schema fields ----
         const serializedRecord: WasteRecordResponse = {
             ...wasteRecord,
             quantity: wasteRecord.quantity.toString(),
-            cost: wasteRecord.cost.toString(),
+            costValue: wasteRecord.costValue.toString(),
         };
+        // ---- END FIX ----
 
         return NextResponse.json<ApiResponse<WasteRecordResponse>>(
             { success: true, data: serializedRecord },
@@ -151,17 +160,17 @@ export async function POST(req: NextRequest) {
     } catch (error: any) {
         console.error("Error recording waste:", error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-             if (error.code === 'P2003') { // Foreign key constraint
+             if (error.code === 'P2003') { 
                  if (error.meta?.field_name?.toString().includes('ingredientId')) return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente não encontrado." }, { status: 404 });
-                 if (error.meta?.field_name?.toString().includes('venueObjectId')) return NextResponse.json<ApiResponse>({ success: false, error: "Localização não encontrada." }, { status: 404 });
-                 if (error.meta?.field_name?.toString().includes('userId')) return NextResponse.json<ApiResponse>({ success: false, error: "Usuário registrador não encontrado." }, { status: 404 });
+                 // if (error.meta?.field_name?.toString().includes('venueObjectId')) ... // Not a field on WasteRecord
+                 if (error.meta?.field_name?.toString().includes('recordedById')) return NextResponse.json<ApiResponse>({ success: false, error: "Usuário registrador não encontrado." }, { status: 404 });
              }
-             if (error.code === 'P2025') { // Record to update not found (e.g., during stock deduction)
+             if (error.code === 'P2025') { 
                   return NextResponse.json<ApiResponse>({ success: false, error: "Lote de estoque não encontrado durante a dedução." }, { status: 404 });
              }
         }
          if (error.message.startsWith('Estoque insuficiente') || error.message.includes('não encontrado')) {
-             return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 400 }); // Bad request due to logic/data issue
+             return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 400 }); 
          }
         return NextResponse.json<ApiResponse>(
             { success: false, error: `Erro interno do servidor: ${error.message}` },

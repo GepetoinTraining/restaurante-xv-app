@@ -7,17 +7,12 @@ import { Decimal } from "@prisma/client/runtime/library";
 import { PrepTaskStatus, TransactionType } from "@prisma/client"; // Added TransactionType
 
 // Define the response structure for the cost report
-// (Extendable - add COGS, profit margins etc. later if sales data is integrated)
 export type CostReportResponse = {
   startDate: string;
   endDate: string;
-  totalPrepCost: string; // Cost of ingredients used in completed prep tasks
-  totalWasteCost: string; // Cost of ingredients recorded as waste
-  totalBuffetRevenue: string; // Revenue generated from client plates (buffet)
-  // --- Potential Additions ---
-  // totalIngredientPurchaseCost: string; // Cost from simulated invoices (needs invoice model)
-  // totalCOGS: string; // Cost Of Goods Sold (needs sales & recipe costs)
-  // netProfitOrLoss: string; // (needs sales data)
+  totalPrepCost: string; 
+  totalWasteCost: string; 
+  totalBuffetRevenue: string; 
 };
 
 /**
@@ -72,8 +67,7 @@ export async function GET(req: NextRequest) {
                 ingredient: true, // Need ingredient costPerUnit
               },
             },
-            // Need output quantity to calculate runs accurately based on quantityRun
-            outputIngredient: true,
+            outputIngredient: true, // Need outputQuantity
           },
         },
       },
@@ -81,18 +75,22 @@ export async function GET(req: NextRequest) {
 
     let totalPrepCost = new Decimal(0);
     for (const task of completedPrepTasks) {
-      // Use actual quantity produced (quantityRun) if available and valid, else fall back to targetQuantity
       const quantityProduced = task.quantityRun ?? task.targetQuantity;
-      if (quantityProduced.isZero() || task.prepRecipe.outputQuantity.isZero()) continue; // Skip if no output or zero output
+      if (!task.prepRecipe || !task.prepRecipe.outputQuantity || quantityProduced.isZero() || task.prepRecipe.outputQuantity.isZero()) {
+          console.warn(`Skipping prep task ${task.id}: Missing recipe data or zero output/quantity.`);
+          continue; 
+      }
 
-      const runs = quantityProduced.dividedBy(task.prepRecipe.outputQuantity); // Calculate runs based on actual/target output
+      const runs = quantityProduced.dividedBy(task.prepRecipe.outputQuantity); 
 
       for (const input of task.prepRecipe.inputs) {
-        // Use the costPerUnit at the time of the input ingredient definition
-        // Note: This might not reflect the *actual* cost if FIFO/LIFO isn't tracked perfectly on purchase
+        if (!input.ingredient) {
+             console.warn(`Skipping prep task ${task.id} input ${input.ingredientId}: Missing ingredient data.`);
+             continue;
+        }
         const inputCost = input.ingredient.costPerUnit
-                           .times(input.quantity) // Cost per input unit in recipe
-                           .times(runs);          // Total cost for this input in this task run
+                           .times(input.quantity)
+                           .times(runs);          
         totalPrepCost = totalPrepCost.plus(inputCost);
       }
     }
@@ -100,27 +98,30 @@ export async function GET(req: NextRequest) {
     // --- 2. Calculate Total Waste Cost ---
     const wasteRecords = await prisma.wasteRecord.findMany({
       where: {
-        createdAt: { // Assuming createdAt reflects when waste happened/was recorded
+        createdAt: { 
           gte: startDate,
           lte: endDate,
         },
       },
       select: {
-        cost: true, // Use the pre-calculated cost stored in the record
+        // ---- START FIX ----
+        // The field in your schema.prisma is 'costValue'
+        costValue: true, 
+        // ---- END FIX ----
       },
     });
 
     const totalWasteCost = wasteRecords.reduce(
-      (sum, record) => sum.plus(record.cost),
+      // ---- START FIX ----
+      (sum, record) => sum.plus(record.costValue),
+      // ---- END FIX ----
       new Decimal(0)
     );
 
     // --- 3. Calculate Total Buffet Revenue (from Client Plates) ---
-    // Note: This is revenue, not cost. The cost calculation would be more complex,
-    // requiring estimation of ingredients used per plate.
     const clientPlates = await prisma.clientPlate.findMany({
         where: {
-            createdAt: { // Assuming createdAt reflects when plate was weighed
+            createdAt: { 
                 gte: startDate,
                 lte: endDate,
             },
@@ -139,7 +140,7 @@ export async function GET(req: NextRequest) {
     const report: CostReportResponse = {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
-      totalPrepCost: totalPrepCost.toFixed(2), // Format as string with 2 decimal places
+      totalPrepCost: totalPrepCost.toFixed(2), 
       totalWasteCost: totalWasteCost.toFixed(2),
       totalBuffetRevenue: totalBuffetRevenue.toFixed(2),
     };
@@ -148,10 +149,10 @@ export async function GET(req: NextRequest) {
       { success: true, data: report },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating cost report:", error);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro interno do servidor ao gerar relatório de custos" },
+      { success: false, error: `Erro interno do servidor ao gerar relatório de custos: ${error.message}` },
       { status: 500 }
     );
   }
