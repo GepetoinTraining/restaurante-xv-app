@@ -1,5 +1,9 @@
 // PATH: app/about/layout.tsx
-import { AppShell, Burger, Container, Group, Text, Button} from '@mantine/core';
+// ---- START FIX: Add 'use client' because Mantine components are used ----
+'use client'; 
+// ---- END FIX ----
+
+import { AppShell, Burger, Container, Group, Text, Button } from '@mantine/core'; // Added Text, Button
 import Link from 'next/link';
 
 export default function AboutLayout({

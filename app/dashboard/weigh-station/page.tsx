@@ -1,18 +1,19 @@
 // PATH: app/dashboard/weigh-station/page.tsx
-'use client';
+'use client'; // <-- Ensure this is at the top
 
 import { PageHeader } from "@/app/dashboard/components/PageHeader";
 import { ApiResponse } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { Alert, Button, Grid, Group, LoadingOverlay, NumberInput, Paper, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+// ---- START FIX: Import QueryClient directly ----
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+// ---- END FIX ----
 import { IconAlertCircle, IconScale } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { notifications } from "@mantine/notifications";
-// --- REMOVED VisitSelector ---
 
-// Define the shape of the plate data we get from the API
+// Define the shape of the plate data
 type SimplePlate = {
     id: string;
     createdAt: string;
@@ -22,7 +23,7 @@ type SimplePlate = {
     weighedBy: { name: string };
 };
 
-// --- Form Values ---
+// Form Values
 interface WeighFormValues {
     totalWeightGrams: string;
     tareWeightGrams: string;
@@ -30,12 +31,12 @@ interface WeighFormValues {
     notes: string;
 }
 
-// --- Recent Plates Table ---
+// --- Recent Plates Table (Keep as is, it's used within WeighStationContent) ---
 function RecentPlatesTable({ plates, isLoading }: { plates: SimplePlate[] | undefined, isLoading: boolean }) {
-    const rows = plates?.map((plate) => (
+    // ... (table code remains the same)
+     const rows = plates?.map((plate) => (
         <Table.Tr key={plate.id}>
             <Table.Td>{dayjs(plate.createdAt).format('HH:mm:ss')}</Table.Td>
-            {/* --- REMOVED Client Column --- */}
             <Table.Td>{parseFloat(plate.netWeightGrams).toFixed(2)} g</Table.Td>
             <Table.Td>{formatCurrency(parseFloat(plate.calculatedCost))}</Table.Td>
             <Table.Td>{plate.weighedBy.name}</Table.Td>
@@ -52,7 +53,6 @@ function RecentPlatesTable({ plates, isLoading }: { plates: SimplePlate[] | unde
                     <Table.Thead>
                         <Table.Tr>
                             <Table.Th>Hora</Table.Th>
-                            {/* --- REMOVED Client Header --- */}
                             <Table.Th>Peso Líquido</Table.Th>
                             <Table.Th>Custo</Table.Th>
                             <Table.Th>Pesado por</Table.Th>
@@ -74,10 +74,12 @@ function RecentPlatesTable({ plates, isLoading }: { plates: SimplePlate[] | unde
     );
 }
 
-// --- Main Weigh Station Page ---
-export default function WeighStationPage() {
+
+// --- Main Weigh Station Content Component (Uses Hooks) ---
+function WeighStationContent() {
+    // ---- START FIX: Ensure hooks are used inside this client component ----
     const queryClient = useQueryClient();
-    // --- REMOVED selectedVisitId state ---
+    // ---- END FIX ----
 
     const form = useForm<WeighFormValues>({
         initialValues: {
@@ -88,14 +90,14 @@ export default function WeighStationPage() {
         },
     });
 
-    // --- Calculate derived values ---
+    // Calculate derived values
     const totalWeight = parseFloat(form.values.totalWeightGrams) || 0;
     const tareWeight = parseFloat(form.values.tareWeightGrams) || 0;
     const pricePerKg = parseFloat(form.values.pricePerKg) || 0;
     const netWeight = Math.max(0, totalWeight - tareWeight);
-    const calculatedCost = (netWeight / 1000) * pricePerKg; // (g / 1000) * price/kg
+    const calculatedCost = (netWeight / 1000) * pricePerKg;
 
-    // --- Data fetching ---
+    // Data fetching
     const { data: platesData, isLoading: isLoadingPlates } = useQuery<SimplePlate[]>({
         queryKey: ['recentPlates'],
         queryFn: () =>
@@ -103,10 +105,10 @@ export default function WeighStationPage() {
                 if (!data.success) throw new Error(data.error || "Failed to fetch plates");
                 return data.data;
             }),
-        refetchInterval: 10000, // Refetch every 10 seconds
+        refetchInterval: 10000,
     });
 
-    // --- Data mutation ---
+    // Data mutation
     const mutation = useMutation({
         mutationFn: (newPlate: any) =>
             fetch('/api/plates', {
@@ -123,7 +125,7 @@ export default function WeighStationPage() {
                 message: `Custo: ${formatCurrency(calculatedCost)}`,
                 color: 'green',
             });
-            form.reset(); // Reset form
+            form.reset();
             queryClient.invalidateQueries({ queryKey: ['recentPlates'] });
         },
         onError: (error: Error) => {
@@ -136,8 +138,6 @@ export default function WeighStationPage() {
     });
 
     const handleSubmit = (values: WeighFormValues) => {
-        // --- REMOVED Visit Check ---
-
         if (netWeight <= 0) {
             notifications.show({
                 title: 'Peso inválido',
@@ -148,7 +148,6 @@ export default function WeighStationPage() {
         }
 
         mutation.mutate({
-            // --- REMOVED visitId ---
             totalWeightGrams: totalWeight,
             tareWeightGrams: tareWeight,
             calculatedCost: calculatedCost,
@@ -161,13 +160,12 @@ export default function WeighStationPage() {
             <PageHeader title="Estação de Pesagem" />
             
             <Grid>
-                {/* --- Weighing Form --- */}
+                {/* Weighing Form */}
                 <Grid.Col span={{ base: 12, md: 5 }}>
                     <Paper withBorder shadow="md" p="md">
                         <form onSubmit={form.onSubmit(handleSubmit)}>
                             <Stack>
                                 <Title order={3}>Registrar Prato</Title>
-                                {/* --- REMOVED VisitSelector --- */}
                                 
                                 <NumberInput
                                     label="Preço por Kg (R$)"
@@ -197,7 +195,7 @@ export default function WeighStationPage() {
                                     {...form.getInputProps('notes')}
                                 />
 
-                                {/* --- Summary --- */}
+                                {/* Summary */}
                                 <Paper withBorder p="sm" radius="md" bg="blue.0">
                                     <Stack gap="xs">
                                         <Group justify="space-between">
@@ -226,11 +224,24 @@ export default function WeighStationPage() {
                     </Paper>
                 </Grid.Col>
 
-                {/* --- Recent Plates --- */}
+                {/* Recent Plates */}
                 <Grid.Col span={{ base: 12, md: 7 }}>
                     <RecentPlatesTable plates={platesData} isLoading={isLoadingPlates} />
                 </Grid.Col>
             </Grid>
         </>
+    );
+}
+
+// ---- START FIX: Create QueryClient instance outside the main component ----
+const queryClient = new QueryClient();
+// ---- END FIX ----
+
+// Export the page wrapped in the QueryClientProvider
+export default function WeighStationPage() {
+    return (
+        <QueryClientProvider client={queryClient}>
+            <WeighStationContent />
+        </QueryClientProvider>
     );
 }

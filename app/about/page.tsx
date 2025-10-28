@@ -1,5 +1,9 @@
 // PATH: app/about/page.tsx
-import { Title, Text, Stack, Paper, ThemeIcon, List, Group } from "@mantine/core";
+// ---- START FIX: Add 'use client' because Mantine components are used ----
+'use client';
+// ---- END FIX ----
+
+import { Title, Text, Stack, Paper, ThemeIcon, List, Group } from "@mantine/core"; // Added Group
 import { IconCookie, IconUsers, IconListDetails, IconToolsKitchen, IconScale } from "@tabler/icons-react";
 
 // Helper component for styling sections
