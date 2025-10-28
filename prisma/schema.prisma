@@ -375,18 +375,33 @@ model ServingPanModel {
   id          String   @id @default(cuid())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  name        String   @unique // e.g., "GN 1/1 100mm Inox", "Travessa Cerâmica Média"
+ 
+   name        String   @unique // e.g., "GN 1/1 100mm Inox", "Travessa Cerâmica Média"
   material    String?
   capacityL   Float? // Volume capacity in Liters
   tareWeightG Float? // Average tare weight in grams
   dimensions  String? // e.g., "530x325x100mm"
   notes       String?
-
   // Relations
   pans ServingPan[] // Individual pans of this model
 
   @@map("serving_pan_models")
 }
+
+// --- ADD THIS NEW MODEL ---
+model BuffetStation {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  name         String   @unique
+  displayOrder Int?
+
+  // Relations
+  pans ServingPan[] // Pans belonging to this station
+
+  @@map("buffet_stations")
+}
+// --- END NEW MODEL ---
 
 model ServingPan {
   id               String   @id @default(cuid())
@@ -396,24 +411,24 @@ model ServingPan {
   uniqueIdentifier String?  @unique
   status           PanStatus @default(AVAILABLE)
   notes            String?
-
-  // --- ADD THESE FIELDS ---
-  ingredientId     String? // What ingredient is currently in the pan?
+  ingredientId     String?  // What ingredient is currently in the pan?
   currentQuantity  Decimal  @default(0.0) @db.Decimal(10, 4) // How much is in it (in ingredient's base unit)
   capacity         Decimal? @db.Decimal(10, 4) // How much *can* it hold? (optional)
-  // ------------------------
+
+  // --- START FIX: Add the opposite relation field ---
+  buffetStationId  String?
+  buffetStation    BuffetStation? @relation(fields: [buffetStationId], references: [id], onDelete: SetNull)
+  // --- END FIX ---
 
   // Relations
   panModel     ServingPanModel @relation(fields: [panModelId], references: [id], onDelete: Restrict)
   panShipments PanShipment[]   @relation("ShippedPan")
-
-  // --- ADD THIS RELATION ---
-  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
-  // -------------------------
+  ingredient   Ingredient?     @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
 
   @@index([status])
-  // --- ADD THIS INDEX ---
   @@index([ingredientId])
+  // --- ADD THIS INDEX ---
+  @@index([buffetStationId])
   // ----------------------
   @@map("serving_pans")
 }
