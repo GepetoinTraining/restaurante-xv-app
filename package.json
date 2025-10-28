@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma db push && tsc --project tsconfig.seed.json && npx prisma db seed && next build",
+    "build": "prisma generate && prisma db push && tsc prisma/seed.ts --module commonjs --outDir prisma --esModuleInterop --skipLibCheck && npx prisma db seed && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate"

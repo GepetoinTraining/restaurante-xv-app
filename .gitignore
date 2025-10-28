@@ -36,3 +36,5 @@ Prisma
 
 /prisma/dev.db
 /prisma/dev.db-journal
+/prisma/seed.js # Ignore the compiled seed script
+/prisma/seed.js.map # Ignore the source map if generated
