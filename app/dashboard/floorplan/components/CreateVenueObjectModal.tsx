@@ -8,7 +8,7 @@ import { z } from "zod";
 import { VenueObject, VenueObjectType, Workstation } from "@prisma/client";
 import { ApiResponse } from "@/lib/types";
 import { useEffect, useState } from "react";
-import { useQuery }s from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 // Zod schema for the object
 const schema = z.object({

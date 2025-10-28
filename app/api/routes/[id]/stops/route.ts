@@ -31,8 +31,8 @@ export async function POST(
       );
     }
 
-    const { deliveryId }_ = validation.data;
-    let { stopOrder }_ = validation.data;
+    const { deliveryId } = validation.data;
+    let { stopOrder } = validation.data;
 
     // --- Start Transaction ---
     const newRouteStop = await prisma.$transaction(async (tx) => {

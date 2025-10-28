@@ -40,7 +40,7 @@ export async function PATCH(
     });
 
     return NextResponse.json(updatedClient);
-  } catch (error)S {
+  } catch (error) {
     console.error(`Failed to update sales stage for client ${params.id}:`, error);
     return NextResponse.json(
       { error: 'Internal server error' },
