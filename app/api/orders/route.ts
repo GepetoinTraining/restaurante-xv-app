@@ -1,10 +1,8 @@
 // PATH: app/api/orders/route.ts
-// NOTE: Added stock deduction logic
-
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Order, OrderItem, Product, User, Visit, VenueObject, VenueObjectType, Prisma } from "@prisma/client"; // Added Visit, VenueObject, VenueObjectType, Prisma
+import { Order, OrderItem, Product, User, Visit, VenueObject, VenueObjectType, Prisma, StaffOrderAssignment } from "@prisma/client"; // Added StaffOrderAssignment
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth"; // To get the logged-in user
 
@@ -47,10 +45,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1.5 Fetch the Visit to get the clientId
+    // 1.5 Fetch the Visit to get the clientId and check if active
     const visit = await prisma.visit.findUnique({
         where: { id: visitId },
-        select: { clientId: true }
+        select: { clientId: true, status: true }
     });
 
     if (!visit) {
@@ -59,6 +57,12 @@ export async function POST(req: NextRequest) {
             { status: 404 }
         );
     }
+     if (visit.status !== 'ACTIVE') {
+         return NextResponse.json<ApiResponse>(
+            { success: false, error: "A visita não está ativa." },
+            { status: 400 } // Bad Request - cannot add order to inactive visit
+        );
+     }
 
 
     // 2. Fetch all product details needed, including prepStationId and recipes
@@ -66,13 +70,14 @@ export async function POST(req: NextRequest) {
     const productsWithRecipes = await prisma.product.findMany({
       where: {
         id: { in: productIds },
+        isActive: true, // Only allow ordering active products
       },
       include: {
         recipe: { // Include recipe
             include: {
                 ingredients: { // Include recipe ingredients
                     include: {
-                        ingredient: true // Include ingredient details (name, unit)
+                        ingredient: true // Include ingredient details (name, unit, costPerUnit)
                     }
                 }
             }
@@ -88,14 +93,15 @@ export async function POST(req: NextRequest) {
 
     let totalOrderPrice = new Decimal(0);
     const orderItemsData: Prisma.OrderItemCreateManyOrderInput[] = [];
-    // Structure to hold stock deductions needed { ingredientId: { required: Decimal, name: string, unit: string } }
+    // Structure to hold stock deductions needed { ingredientId: { required: Decimal, name: string, unit: string, locations: string[] } }
     const requiredStockMap = new Map<string, { required: Decimal, name: string, unit: string, locations: string[] }>();
     const prepLocationMap = new Map<string, string>(); // Map<prepStationId, venueObjectId>
 
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product) {
-        return NextResponse.json<ApiResponse>( { success: false, error: `Produto inválido: ID ${item.productId}` }, { status: 400 });
+        // This check handles inactive products too, as they won't be in productMap
+        return NextResponse.json<ApiResponse>( { success: false, error: `Produto inválido ou inativo: ID ${item.productId}` }, { status: 400 });
       }
       if (item.quantity <= 0) {
          return NextResponse.json<ApiResponse>( { success: false, error: `Quantidade inválida para ${product.name}` }, { status: 400 });
@@ -112,6 +118,7 @@ export async function POST(req: NextRequest) {
         unitPrice: unitPrice,
         totalPrice: itemTotalPrice,
         workstationId: product.prepStationId,
+        // status is defaulted to PENDING by schema
       });
 
       // --- Calculate required ingredients and find prep location ---
@@ -119,15 +126,18 @@ export async function POST(req: NextRequest) {
            // Find the VenueObject representing the prep station for this product
            let prepVenueObjectId = prepLocationMap.get(product.prepStationId);
            if (!prepVenueObjectId) {
+                // Find the *first* VenueObject linked to this Workstation ID.
+                // Assumption: A workstation is represented by one primary VenueObject on the floorplan.
                 const prepVenueObject = await prisma.venueObject.findFirst({
                     where: {
                         workstationId: product.prepStationId,
-                        type: VenueObjectType.WORKSTATION // Or maybe WORKSTATION_STORAGE? Define rule.
+                        // type: VenueObjectType.WORKSTATION // Maybe too restrictive? Allow WORKSTATION_STORAGE too?
                     },
                     select: { id: true }
                 });
                 if (!prepVenueObject) {
-                    throw new Error(`Localização (VenueObject) para a estação de preparo "${product.prepStation.name}" (ID: ${product.prepStationId}) não encontrada.`);
+                    // Critical error: The system needs a VenueObject linked to the workstation for stock deduction.
+                    throw new Error(`Configuração inválida: Localização física (VenueObject) para a estação de preparo "${product.prepStation.name}" (ID: ${product.prepStationId}) não encontrada.`);
                 }
                 prepVenueObjectId = prepVenueObject.id;
                 prepLocationMap.set(product.prepStationId, prepVenueObjectId);
@@ -166,12 +176,11 @@ export async function POST(req: NextRequest) {
       // --- Stock Deduction Logic ---
       for (const [ingredientId, requirement] of requiredStockMap.entries()) {
           let totalDeductedForIngredient = new Decimal(0);
+          let remainingRequiredOverall = requirement.required; // Track total needed for this ingredient
 
            // Try deducting from each required location for this ingredient
           for (const locationId of requirement.locations) {
-                // Calculate how much *more* needs to be deducted for this ingredient *overall*
-                let stillRequired = requirement.required.minus(totalDeductedForIngredient);
-                if (stillRequired.lte(0)) break; // Already deducted enough from other locations/items
+                if (remainingRequiredOverall.lte(0)) break; // Already deducted enough overall
 
                  // Find available stock holdings for this ingredient at this specific location
                 const holdings = await tx.stockHolding.findMany({
@@ -183,38 +192,31 @@ export async function POST(req: NextRequest) {
                     orderBy: { createdAt: 'asc' } // Simple FIFO
                 });
 
-                let deductedFromThisLocation = new Decimal(0);
-                for (const holding of holdings) {
-                    // How much do we need from *this specific batch*?
-                    const neededFromThisBatch = Decimal.min(stillRequired.minus(deductedFromThisLocation), holding.quantity);
+                let neededFromThisLocation = remainingRequiredOverall; // How much is *still* needed for this ingredient?
 
-                    if (neededFromThisBatch.lte(0)) continue; // Skip if batch not needed or empty
+                for (const holding of holdings) {
+                    if (neededFromThisLocation.lte(0)) break; // Deducted enough for this location's need
+
+                    const canDeductFromThisBatch = Decimal.min(neededFromThisLocation, holding.quantity);
 
                     await tx.stockHolding.update({
                         where: { id: holding.id },
                         data: {
-                            quantity: { decrement: neededFromThisBatch }
+                            quantity: { decrement: canDeductFromThisBatch }
                         }
                     });
 
-                    deductedFromThisLocation = deductedFromThisLocation.plus(neededFromThisBatch);
-                    totalDeductedForIngredient = totalDeductedForIngredient.plus(neededFromThisBatch); // Track overall deduction
+                    totalDeductedForIngredient = totalDeductedForIngredient.plus(canDeductFromThisBatch);
+                    remainingRequiredOverall = remainingRequiredOverall.minus(canDeductFromThisBatch);
+                    neededFromThisLocation = neededFromThisLocation.minus(canDeductFromThisBatch);
 
-                    if (deductedFromThisLocation.gte(stillRequired)) {
-                        break; // Deducted enough for this ingredient from this location
-                    }
-                }
-                 // Check if enough was deducted *from this location* for the portion required here
-                 // Note: This simple check might fail if multiple order items need the same ingredient
-                 // from the same location, summing up to more than available. A more robust check
-                 // might aggregate requirements *per location* before deduction.
-                 // For now, we check the overall deduction below.
+                } // End loop through holdings for one location
           } // End loop through locations for one ingredient
 
 
           // Check if the total deducted amount across all relevant locations meets the requirement
-          if (totalDeductedForIngredient.lt(requirement.required)) {
-                throw new Error(`Estoque insuficiente para "${requirement.name}" (${requirement.unit}). Necessário: ${requirement.required.toString()}, Disponível nas estações relevantes: ${totalDeductedForIngredient.toString()}.`);
+          if (remainingRequiredOverall.gt(0)) {
+                throw new Error(`Estoque insuficiente para "${requirement.name}" (${requirement.unit}). Necessário: ${requirement.required.toString()}, Disponível total nas estações relevantes: ${totalDeductedForIngredient.toString()}.`);
           }
       } // End loop through requiredStockMap
 
@@ -224,20 +226,31 @@ export async function POST(req: NextRequest) {
           visitId: visitId,
           clientId: visit.clientId,
           total: totalOrderPrice,
-          status: "PENDING",
+          status: "PENDING", // Initial status
           items: {
             createMany: {
               data: orderItemsData,
             },
           },
+          // Create the link to the staff member who handled it
           handledBy: {
             create: {
               userId: user.id,
+              role: user.role, // Use the user's role from the session
             },
           },
         },
         include: {
-            items: true,
+            items: { // Include items in the response
+                include: {
+                    product: true // Include product details for items
+                }
+            },
+            handledBy: { // Include handler details
+                 include: {
+                    user: { select: { id: true, name: true, role: true } }
+                }
+            }
         }
       });
 
@@ -267,7 +280,13 @@ export async function POST(req: NextRequest) {
             ...item,
             unitPrice: item.unitPrice.toString(),
             totalPrice: item.totalPrice.toString(),
+             // Also serialize product price within items
+            product: {
+                ...item.product,
+                price: item.product.price.toString(),
+            }
         })),
+        // handledBy does not contain Decimals based on include
     };
 
     return NextResponse.json<ApiResponse<any>>(
@@ -277,17 +296,17 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("Error creating order:", error);
     // Catch specific stock error from transaction
-    if (error.message.startsWith('Estoque insuficiente')) {
-         return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 409 }); // 409 Conflict - stock issue
+    if (error.message.startsWith('Estoque insuficiente') || error.message.startsWith('Configuração inválida:')) {
+         return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 409 }); // 409 Conflict - stock/config issue
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') {
-            return NextResponse.json<ApiResponse>({ success: false, error: "Erro: Visita, produto ou localização não encontrado durante a criação do pedido." }, { status: 404 });
+        if (error.code === 'P2025') { // Record not found
+            return NextResponse.json<ApiResponse>({ success: false, error: "Erro: Visita, produto, estação ou localização não encontrado durante a criação do pedido." }, { status: 404 });
         }
     }
      // Catch transaction timeout errors
-     if (error.message.includes('Transaction API error: Transaction already closed')) {
-        return NextResponse.json<ApiResponse>({ success: false, error: "Erro: Tempo limite da transação excedido. Tente novamente." }, { status: 504 }); // Gateway Timeout
+     if (error.message.includes('Transaction API error: Transaction already closed') || error.message.includes('timed out')) {
+        return NextResponse.json<ApiResponse>({ success: false, error: "Erro: Tempo limite da transação excedido ao processar estoque. Tente novamente." }, { status: 504 }); // Gateway Timeout
      }
 
     return NextResponse.json<ApiResponse>(
