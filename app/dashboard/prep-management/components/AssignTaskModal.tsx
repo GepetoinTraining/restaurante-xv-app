@@ -52,14 +52,21 @@ export function AssignTaskModal({
 
     if (!task) return null;
 
+    // ---- START FIX: Provide fallback values ----
+    const unit = task.prepRecipe.outputIngredient?.unit ?? 'unid.';
+    const name = task.prepRecipe.outputIngredient?.name ?? 'Item Preparado';
+    // ---- END FIX ----
+
     return (
         <Modal opened={opened} onClose={handleClose} title="Atribuir Tarefa de Preparo">
             <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack>
                     <Title order={5}>{task.prepRecipe.name}</Title>
+                    {/* ---- START FIX: Use fallback variables ---- */}
                      <Text size="sm">
-                        Meta: {task.targetQuantity} {task.prepRecipe.outputIngredient.unit} de {task.prepRecipe.outputIngredient.name}
+                        Meta: {task.targetQuantity} {unit} de {name}
                     </Text>
+                    {/* ---- END FIX ---- */}
                      <Text size="sm" c="dimmed">Local: {task.location.name}</Text>
 
                     <Select
