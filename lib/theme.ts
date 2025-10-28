@@ -1,99 +1,78 @@
 // PATH: lib/theme.ts
-"use client";
+'use client';
 
-import { createTheme, MantineColorsTuple } from "@mantine/core";
+import { createTheme, MantineColorsTuple, MantineTheme } from '@mantine/core'; // ---- START FIX: Import MantineTheme ----
 
-// Define an Orange color tuple (adjust shades as needed)
-const brandOrange: MantineColorsTuple = [
-  "#fff4e6", // Lightest
-  "#ffe8cc",
-  "#ffd099",
-  "#ffb766", // Lighter mid-tone
-  "#ffa136", // Main orange shade (adjust index in primaryColor if needed)
-  "#ff961a",
-  "#ff910c", // Darker mid-tone
-  "#e37d00", // Darker
-  "#c96e00",
-  "#ae5e00", // Darkest
+// Define custom color tuple (e.g., a warm orange)
+const xvOrange: MantineColorsTuple = [
+  "#fff4e2", // Lightest shade
+  "#ffe9cc",
+  "#ffcea0",
+  "#ffb170",
+  "#ffa04d", // Primary shade (index 4 or 5 typically)
+  "#ff9536",
+  "#ff912b", // Darker shade for hover/active
+  "#e67c1c",
+  "#ce6c11",
+  "#b75c0c"  // Darkest shade
 ];
-
-// Define Pastel Green (keeping the previous one available)
-const pastelGreen: MantineColorsTuple = [
-  "#e6fcf5", "#d5f9ec", "#aef2d8", "#85ebc2", "#62e4ae",
-  "#4add9f", "#3cc997", "#30b184", "#249c73", "#138663"
-];
-
-// Define Gold color tuple (keeping the previous one available)
-const privacyGold: MantineColorsTuple = [
-  "#fff9e0", "#fff2cc", "#ffe59e", "#ffd76b", "#ffcb3f",
-  "#ffc323", "#ffbe10", "#e3a502", "#c99100", "#ae7d00"
-];
-
 
 export const theme = createTheme({
-  /* Define primary color */
-  primaryColor: "brandOrange", // Use the orange color
+  /** Put your mantine theme override here */
+  // Example: Setting primary color
+  primaryColor: 'xv-orange', // Use the custom color name
   colors: {
-    brandOrange, // Add the orange tuple
-    pastelGreen, // Keep pastelGreen available
-    privacyGold, // Keep gold available
+    'xv-orange': xvOrange, // Register the custom color
   },
-  /* Customize other theme properties */
-  // Use a font that matches the site's modern sans-serif style
-  // Ensure you import 'Montserrat' via a CSS import or font provider if using it
-  fontFamily: "'Montserrat', sans-serif",
-  headings: {
-    fontFamily: "'Montserrat', sans-serif",
-    fontWeight: "700", // Headings on the site appear bold
+
+  // Example: Setting default font family
+  fontFamily: 'Verdana, sans-serif', // A simple, widely available font
+
+  // Example: Setting default border radius
+  radius: {
+    xs: '2px',
+    sm: '4px', // Slightly rounded corners
+    md: '8px',
+    lg: '16px',
+    xl: '32px',
   },
+  defaultRadius: 'sm', // Use the 'sm' radius by default for most components
+
+  // Example: Overriding specific component styles globally
   components: {
     Button: {
       defaultProps: {
+        // Example: Default variant or size for all buttons
+        // variant: 'light',
         radius: "sm", // Buttons on the site seem to have slight rounding
       },
-       styles: (theme) => ({
+      // ---- START FIX: Add type to theme parameter ----
+      styles: (theme: MantineTheme) => ({
+      // ---- END FIX ----
            root: {
                // Example: Make default buttons use the primary orange
                // This ensures buttons match the brand unless overridden
-               // Adjust shades as needed for visual appeal
-               // backgroundColor: theme.colors.brandOrange[6],
-               // color: theme.white,
-               // '&:hover': {
-               //    backgroundColor: theme.colors.brandOrange[7],
-               // }
-           }
-       })
-    },
-    Paper: {
-      defaultProps: {
-        radius: "md",
-        shadow: "sm",
-      },
-    },
-     NavLink: { // Style NavLinks for better contrast/fit with dark theme & orange accent
-        styles: (theme) => ({
-             root: {
-                borderRadius: theme.radius.sm,
-                '&[data-active]': {
-                    // Use a darker shade of orange for active background in dark mode
-                    backgroundColor: theme.colors.brandOrange[8],
-                    color: theme.white, // Ensure text is readable
-                    fontWeight: 500,
-                    '& svg': {
-                       color: theme.white,
-                    },
-                     '&:hover': {
-                         backgroundColor: theme.colors.brandOrange[9], // Slightly darker on hover
-                     }
-                 },
-                 '&:hover:not([data-active])': {
-                    backgroundColor: theme.colors.dark[6], // Standard dark hover
-                 },
+               // '&[data-variant="filled"]': {
+               //     backgroundColor: theme.colors['xv-orange'][5],
+               //     '&:hover': {
+               //         backgroundColor: theme.colors['xv-orange'][6],
+               //     },
+               // },
            },
-        }),
-     },
-    // Add other component overrides if needed
+       }),
+    },
+    // Add overrides for other components like Input, Modal, etc. if needed
+    // Input: {
+    //   styles: (theme) => ({
+    //     input: {
+    //       borderColor: theme.colors.gray[4],
+    //     },
+    //   }),
+    // },
+    // Modal: {
+    //     styles: {
+    //         header: { backgroundColor: theme.colors.gray[1] },
+    //     }
+    // }
   },
-  // Keep dark as the default based on MantineProvider setting
-  defaultColorScheme: 'dark',
 });
