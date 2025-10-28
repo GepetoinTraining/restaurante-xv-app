@@ -1,0 +1,9 @@
+/* Import Mantine's base styles */
+@import '@mantine/core/styles.css';
+
+/* Set a dark, on-brand background for the whole app */
+body {
+  background-color: #101113; /* A very dark, near-black */
+  color: #c1c2c5; /* Mantine's default light text color */
+  min-height: 100vh;
+}
