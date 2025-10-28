@@ -5,7 +5,9 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { RouteStatus } from '@prisma/client';
 
-// Schema for updating a route
+// Schema and GET/PATCH functions remain the same as before
+// ... existing code ...
+
 const routeUpdateSchema = z.object({
   routeName: z.string().optional(),
   vehicleId: z.string().cuid().nullable().optional(),
@@ -15,7 +17,6 @@ const routeUpdateSchema = z.object({
 
 /**
  * GET /api/routes/[id]
- *
  * Fetches a single route by its ID.
  */
 export async function GET(
@@ -23,7 +24,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   try {
-    const { id }_ = params;
+    const { id } = params; // Corrected
     const route = await prisma.route.findUnique({
       where: { id },
       include: {
@@ -40,7 +41,6 @@ export async function GET(
             },
           },
         },
-        // We could also include the driver User model here if needed
       },
     });
 
@@ -60,15 +60,14 @@ export async function GET(
 
 /**
  * PATCH /api/routes/[id]
- *
- * Updates a route's details (e.g., assign driver/vehicle, update status).
+ * Updates a route's details.
  */
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } },
 ) {
   try {
-    const { id }_ = params;
+    const { id } = params; // Corrected
     const body = await req.json();
     const validation = routeUpdateSchema.safeParse(body);
 
@@ -79,7 +78,7 @@ export async function PATCH(
       );
     }
 
-    const { routeName, vehicleId, driverId, status }_ = validation.data;
+    const { routeName, vehicleId, driverId, status } = validation.data;
 
     const updatedRoute = await prisma.route.update({
       where: { id },
@@ -113,7 +112,9 @@ export async function DELETE(
   { params }: { params: { id: string } },
 ) {
   try {
-    const { id }_ = params;
+    // --- START FIX ---
+    const { id } = params; // Removed the trailing underscore
+    // --- END FIX ---
 
     // Check if route exists
     const route = await prisma.route.findUnique({
