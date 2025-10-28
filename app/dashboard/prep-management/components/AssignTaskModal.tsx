@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Modal, Button, Stack, Select, Text, Title } from "@mantine/core";
+import { Modal, Button, Stack, Select, Text, Title, LoadingOverlay } from "@mantine/core"; // Added LoadingOverlay
 import { useForm } from "@mantine/form";
 import { SerializedPrepTask, UserWithWorkstation } from "@/lib/types";
 
@@ -12,6 +12,7 @@ interface AssignTaskModalProps {
     onAssign: (userId: string | null) => void; // Pass null to unassign
     staffList: UserWithWorkstation[];
     task: SerializedPrepTask | null;
+    // isLoading?: boolean; // Add loading state from parent if needed
 }
 
 export function AssignTaskModal({
@@ -20,54 +21,61 @@ export function AssignTaskModal({
     onAssign,
     staffList,
     task,
+    // isLoading // Destructure loading state if passed
 }: AssignTaskModalProps) {
     const form = useForm({
         initialValues: {
-            assignedToUserId: task?.assignedToUserId ?? null as string | null,
+            assignedToUserId: null as string | null, // Initialize as null
         },
+        // No validation needed for just selecting
     });
 
     // Update form value if task changes while modal is open
     useEffect(() => {
         if (opened && task) {
+            // Set to null explicitly if task.assignedToUserId is null/undefined
             form.setFieldValue('assignedToUserId', task.assignedToUserId ?? null);
+        } else if (!opened) {
+            form.reset(); // Reset when closing
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [task, opened]);
 
 
     const handleSubmit = (values: { assignedToUserId: string | null }) => {
-        onAssign(values.assignedToUserId); // Pass selected user ID (or null)
+        // If the empty string option ('') was selected, treat it as null (unassign)
+        onAssign(values.assignedToUserId === '' ? null : values.assignedToUserId);
     };
 
      const handleClose = () => {
-         // Don't reset form here, rely on useEffect when opening/task changes
+        // Resetting is handled by useEffect
         onClose();
     };
 
+    // Prepare options for the Select component
     const staffOptions = [
-         { value: '', label: 'Remover atribuição (Pendente)' }, // Option to unassign
+         { value: '', label: 'Remover atribuição (Pendente)' }, // Option to unassign, use empty string value
          ...staffList.map(s => ({ value: s.id, label: s.name }))
      ];
 
-    if (!task) return null;
+    if (!task) return null; // Don't render if no task is provided
 
-    // ---- START FIX: Provide fallback values ----
-    const unit = task.prepRecipe.outputIngredient?.unit ?? 'unid.';
-    const name = task.prepRecipe.outputIngredient?.name ?? 'Item Preparado';
-    // ---- END FIX ----
+    // Safely access potentially null properties
+    const unit = task.prepRecipe?.outputIngredient?.unit ?? 'unid.';
+    const name = task.prepRecipe?.outputIngredient?.name ?? 'Item Preparado';
+    const recipeName = task.prepRecipe?.name ?? 'Receita Desconhecida';
+    const locationName = task.location?.name ?? 'Local Desconhecido';
 
     return (
         <Modal opened={opened} onClose={handleClose} title="Atribuir Tarefa de Preparo">
+            {/* <LoadingOverlay visible={isLoading} /> */} {/* Uncomment if parent passes loading state */}
             <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack>
-                    <Title order={5}>{task.prepRecipe.name}</Title>
-                    {/* ---- START FIX: Use fallback variables ---- */}
+                    <Title order={5}>{recipeName}</Title>
                      <Text size="sm">
                         Meta: {task.targetQuantity} {unit} de {name}
                     </Text>
-                    {/* ---- END FIX ---- */}
-                     <Text size="sm" c="dimmed">Local: {task.location.name}</Text>
+                     <Text size="sm" c="dimmed">Local: {locationName}</Text>
 
                     <Select
                         label="Atribuir Para"
@@ -76,9 +84,10 @@ export function AssignTaskModal({
                         {...form.getInputProps('assignedToUserId')}
                         searchable
                         clearable // Allows selecting the 'Remover' option easily
+                        nothingFoundMessage="Nenhum membro da equipe encontrado"
                         mt="md"
                     />
-                    <Button type="submit" mt="md">
+                    <Button type="submit" mt="md" > {/* Removed loading state unless passed */}
                         {form.values.assignedToUserId ? "Confirmar Atribuição" : "Remover Atribuição"}
                     </Button>
                 </Stack>
@@ -86,3 +95,4 @@ export function AssignTaskModal({
         </Modal>
     );
 }
+

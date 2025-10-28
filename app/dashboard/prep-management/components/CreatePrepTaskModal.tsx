@@ -2,34 +2,32 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Modal, Button, Stack, LoadingOverlay, Select, NumberInput, Textarea } from "@mantine/core";
+import { Modal, Button, Stack, LoadingOverlay, Select, NumberInput, Textarea, Text } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { SerializedPrepRecipe, StorageLocation, UserWithWorkstation } from "@/lib/types";
+import { notifications } from "@mantine/notifications"; // Import notifications
 
-// --- START FIX: Update props ---
 interface CreatePrepTaskModalProps {
     opened: boolean;
     onClose: () => void;
-    // onSubmit now takes the form values
     onSubmit: (values: {
         prepRecipeId: string | null;
         targetQuantity: string;
         locationId: string | null;
         assignedToUserId: string | null;
         notes: string;
-    }) => void; 
-    isLoading: boolean; // Renamed from isSubmitting
+    }) => void;
+    isLoading: boolean;
     recipes: SerializedPrepRecipe[];
     locations: StorageLocation[];
     staff: UserWithWorkstation[];
 }
-// --- END FIX ---
 
 export function CreatePrepTaskModal({
     opened,
     onClose,
-    onSubmit, // Use onSubmit
-    isLoading, // Use isLoading
+    onSubmit,
+    isLoading,
     recipes,
     locations,
     staff,
@@ -40,14 +38,15 @@ export function CreatePrepTaskModal({
             prepRecipeId: null as string | null,
             targetQuantity: "",
             locationId: null as string | null,
-            assignedToUserId: null as string | null,
+            assignedToUserId: null as string | null, // Changed from empty string to null
             notes: "",
         },
         validate: {
             prepRecipeId: (val) => (val ? null : "Receita é obrigatória"),
             targetQuantity: (val) => {
                 const num = parseFloat(val);
-                return !isNaN(num) && num > 0 ? null : "Qtd. Alvo inválida (> 0)";
+                // Ensure it's a positive number
+                return !isNaN(num) && num > 0 ? null : "Qtd. Alvo inválida (deve ser > 0)";
             },
             locationId: (val) => (val ? null : "Localização é obrigatória"),
         },
@@ -61,28 +60,37 @@ export function CreatePrepTaskModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [opened]);
 
-    // --- START FIX: Simplified handleSubmit ---
+    // Handle form submission by calling the parent's onSubmit
     const handleSubmit = (values: typeof form.values) => {
-        onSubmit(values); // Just pass values to parent
+        // Ensure assignedToUserId is null if empty string was selected
+        const finalValues = {
+            ...values,
+            assignedToUserId: values.assignedToUserId === '' ? null : values.assignedToUserId
+        };
+        onSubmit(finalValues);
     };
-    // --- END FIX ----
 
-    // --- Removed internal API call logic ---
+    const handleClose = () => {
+        // Form reset is handled by useEffect
+        onClose();
+    }
 
+    // Prepare data for Select components
     const recipeOptions = recipes.map(r => ({
         value: r.id,
-        // --- FIX: Check for null outputIngredient ---
+        // Check for null outputIngredient safely
         label: `${r.name} (Produz ${r.outputQuantity} ${r.outputIngredient?.unit ?? 'UN'} ${r.outputIngredient?.name ?? ''})`
     }));
     const locationOptions = locations.map(l => ({ value: l.id, label: l.name }));
+    // Add "Unassigned" option, ensure value is handled correctly (null vs '')
     const staffOptions = [{value: '', label: 'Não atribuir (Pendente)'}, ...staff.map(s => ({ value: s.id, label: s.name }))];
 
     const selectedRecipe = recipes.find(r => r.id === form.values.prepRecipeId);
-    // --- FIX: Check for null outputIngredient ---
+    // Safely access unit
     const outputUnit = selectedRecipe?.outputIngredient?.unit ?? 'UN';
 
     return (
-        <Modal opened={opened} onClose={onClose} title="Criar Nova Tarefa de Preparo" size="lg">
+        <Modal opened={opened} onClose={handleClose} title="Criar Nova Tarefa de Preparo Manual" size="lg">
             <LoadingOverlay visible={isLoading} />
             <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack>
@@ -94,15 +102,19 @@ export function CreatePrepTaskModal({
                         {...form.getInputProps('prepRecipeId')}
                         searchable
                         limit={20}
+                        nothingFoundMessage="Nenhuma receita encontrada"
+                        error={form.errors.prepRecipeId} // Show validation error
                     />
                      <NumberInput
                         required
                         label={`Quantidade Alvo (em ${outputUnit})`}
                         description="Quanto você quer que seja produzido?"
                         placeholder="Ex: 500"
-                        min={0.001}
-                        decimalScale={3}
+                        min={0.001} // Smallest allowed value
+                        decimalScale={3} // Allow decimals
+                        step={0.1} // Step for controls
                         {...form.getInputProps('targetQuantity')}
+                        error={form.errors.targetQuantity} // Show validation error
                     />
                     <Select
                         required
@@ -112,6 +124,8 @@ export function CreatePrepTaskModal({
                         {...form.getInputProps('locationId')}
                         searchable
                         limit={20}
+                        nothingFoundMessage="Nenhum local encontrado"
+                        error={form.errors.locationId} // Show validation error
                     />
                      <Select
                         label="Atribuir Para (Opcional)"
@@ -119,8 +133,10 @@ export function CreatePrepTaskModal({
                         data={staffOptions}
                         {...form.getInputProps('assignedToUserId')}
                         searchable
-                        clearable
+                        clearable // Allows easily selecting "Não atribuir"
                         limit={20}
+                        nothingFoundMessage="Nenhum membro da equipe encontrado"
+                        // No specific validation error needed here usually
                     />
                     <Textarea
                         label="Notas (Opcional)"
@@ -137,3 +153,4 @@ export function CreatePrepTaskModal({
         </Modal>
     );
 }
+
