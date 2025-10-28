@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma db push && npx prisma db seed && next build",
+    "build": "prisma generate && prisma db push && tsc --project tsconfig.seed.json && npx prisma db seed && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate"
@@ -51,6 +51,6 @@
     "typescript": "^5.9.3"
   },
   "prisma": {
-    "seed": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" ./prisma/seed.ts"
+    "seed": "node prisma/seed.js"
   }
 }

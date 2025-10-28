@@ -1,19 +1,14 @@
+// PATH: tsconfig.seed.json
 {
-  // Inherit settings from the main tsconfig.json
   "extends": "./tsconfig.json",
-  // Override settings specifically for running the seed script via ts-node
-  "ts-node": {
-    "compilerOptions": {
-      "module": "CommonJS", // Use CommonJS for compatibility with ts-node script execution
-      "target": "es2017" // Target can often be slightly older for scripts
-    },
-    // Ensure it can find the seed file
-    "include": ["prisma/seed.ts"]
-  },
-  // We don't need compilation output options here usually
   "compilerOptions": {
-    "module": "CommonJS",
-    "target": "es2017",
-    "noEmit": true // Ensure this doesn't try to output JS files
-  }
+    "module": "CommonJS", // Keep CommonJS for Node execution
+    "outDir": "./prisma", // Output JS file next to TS file (or a dedicated build dir)
+    "rootDir": "./prisma", // Specify root to include only prisma files if needed
+    "noEmit": false, // *** IMPORTANT: Allow emitting JS ***
+    "isolatedModules": false, // May be needed when emitting files
+    "sourceMap": false // Optional: disable sourcemaps for seed script
+    // Remove "target" if inheriting from main tsconfig is sufficient
+  },
+  "include": ["prisma/seed.ts"] // Only compile the seed file with this config
 }
