@@ -32,8 +32,9 @@ export function CompletePrepTaskModal({
         },
     });
 
-    // Update initial value if task changes while modal might be open (unlikely but safe)
-    if (opened && task && form.values.quantityRun !== task.targetQuantity) {
+    // Update initial value if task changes while modal might be open
+    // Note: We check if the form *has* been initialized to avoid overriding user input
+    if (opened && task && !form.isDirty() && form.values.quantityRun !== task.targetQuantity) {
         form.setFieldValue('quantityRun', task.targetQuantity);
     }
 
@@ -49,11 +50,10 @@ export function CompletePrepTaskModal({
 
     if (!task) return null;
     
-    // ---- START FIX: Provide fallback values for potentially null ingredient ----
+    // --- FIX: Provide fallback values for potentially null ingredient ----
     const unit = task.prepRecipe.outputIngredient?.unit ?? 'unid.';
     const name = task.prepRecipe.outputIngredient?.name ?? 'Item Preparado';
-    // ---- END FIX ----
-
+    // --- END FIX ----
 
     return (
         <Modal
@@ -65,7 +65,7 @@ export function CompletePrepTaskModal({
             <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack>
                     <Title order={5}>Confirmar Quantidade Produzida</Title>
-                    {/* ---- START FIX: Use fallback variables ---- */}
+                    {/* ---- FIX: Use fallback variables ---- */}
                     <Text size="sm">
                         Receita base produz: {task.prepRecipe.outputQuantity} {unit} de {name}.
                     </Text>
