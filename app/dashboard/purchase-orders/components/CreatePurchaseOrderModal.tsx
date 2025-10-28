@@ -28,7 +28,6 @@ import type { Supplier, Ingredient } from "@prisma/client";
 import { SerializedIngredientDef } from "@/lib/types"; // Import Ingredient type for dropdown
 import { IconTrash } from "@tabler/icons-react";
 import { formatCurrency } from "@/lib/utils";
-import { Decimal } from "@prisma/client/runtime/library"; // Import Decimal for calculation
 
 interface PurchaseOrderItemForm {
   key: string;
@@ -92,14 +91,10 @@ export function CreatePurchaseOrderModal({
 
   // Calculate total cost
   const totalCost = form.values.items.reduce((sum, item) => {
-      try {
-          const quantity = new Decimal(item.orderedQuantity || 0);
-          const cost = new Decimal(item.unitCost || 0);
-          return sum.plus(quantity.times(cost));
-      } catch {
-          return sum; // Ignore items with invalid numbers during calculation
-      }
-  }, new Decimal(0));
+    const quantity = parseFloat(item.orderedQuantity) || 0;
+    const cost = parseFloat(item.unitCost) || 0;
+    return sum + (quantity * cost);
+}, 0);
 
   const handleFormSubmit = (values: typeof form.values) => {
      if (values.items.length === 0) {
@@ -130,69 +125,71 @@ export function CreatePurchaseOrderModal({
 
   // --- Form Fields for Items ---
   const itemFields = form.values.items.map((item, index) => {
-      const selectedIngredient = ingredients.find(i => i.id === item.ingredientId);
-      const itemTotal = (() => {
-          try {
-              const q = new Decimal(item.orderedQuantity || 0);
-              const c = new Decimal(item.unitCost || 0);
-              return q.times(c);
-          } catch { return new Decimal(0); }
-      })();
+    const selectedIngredient = ingredients.find(i => i.id === item.ingredientId);
 
-      return (
-        <Group key={item.key} grow align="flex-start" wrap="nowrap" gap="xs" mb="xs">
-          <Select
-            label={index === 0 ? "Ingrediente" : undefined}
-            placeholder="Selecione..."
-            data={ingredientOptions}
-            {...form.getInputProps(`items.${index}.ingredientId`)}
-            limit={20}
-            searchable
-            required
-            error={form.errors[`items.${index}.ingredientId`]}
-            // When ingredient changes, update unit cost placeholder if available
-            onChange={(value) => {
-                form.setFieldValue(`items.${index}.ingredientId`, value);
-                const ingredient = ingredients.find(i => i.id === value);
-                if (ingredient) {
-                    // This sets the *value* if cost is known, maybe better as placeholder?
-                    // form.setFieldValue(`items.${index}.unitCost`, ingredient.costPerUnit);
-                }
-            }}
-          />
-          <NumberInput
-            label={index === 0 ? `Qtd. Pedida (${selectedIngredient?.unit || 'UN'})` : undefined}
-            placeholder="10"
-            min={0.001}
-            decimalScale={3}
-            {...form.getInputProps(`items.${index}.orderedQuantity`)}
-            required
-            error={form.errors[`items.${index}.orderedQuantity`]}
-          />
-           <NumberInput
-            label={index === 0 ? `Custo Unit. (R$ / ${selectedIngredient?.unit || 'UN'})` : undefined}
-            placeholder={selectedIngredient?.costPerUnit ?? '0.00'} // Suggest last known cost
-            min={0}
-            decimalScale={4} // Allow more precision for cost
-            {...form.getInputProps(`items.${index}.unitCost`)}
-            required
-            error={form.errors[`items.${index}.unitCost`]}
-          />
-          <Stack gap={0} mt={index === 0 ? 25 : 0} align="center">
-            <Text size="xs" c="dimmed">Total</Text>
-            <Text size="sm" fw={500}>{formatCurrency(itemTotal.toNumber())}</Text>
-          </Stack>
-          <ActionIcon
-            color="red"
-            onClick={() => form.removeListItem("items", index)}
-            mt={index === 0 ? 25 : 0}
-            variant="light"
-            disabled={form.values.items.length <= 1}
-          >
-            <IconTrash size={16} />
-          </ActionIcon>
-        </Group>
-      );
+    // 1. itemTotal calculation must be INSIDE the map
+    const itemTotal = (() => {
+      const q = parseFloat(item.orderedQuantity) || 0;
+      const c = parseFloat(item.unitCost) || 0;
+      return q * c;
+    })();
+
+    // 2. The map must return the JSX for each item
+    return (
+      <Group key={item.key} grow align="flex-start" wrap="nowrap" gap="xs" mb="xs">
+        <Select
+          label={index === 0 ? "Ingrediente" : undefined}
+          placeholder="Selecione..."
+          data={ingredientOptions}
+          {...form.getInputProps(`items.${index}.ingredientId`)}
+          limit={20}
+          searchable
+          required
+          error={form.errors[`items.${index}.ingredientId`]}
+          // When ingredient changes, update unit cost placeholder if available
+          onChange={(value) => {
+            form.setFieldValue(`items.${index}.ingredientId`, value);
+            const ingredient = ingredients.find(i => i.id === value);
+            if (ingredient) {
+              // This sets the *value* if cost is known, maybe better as placeholder?
+              // form.setFieldValue(`items.${index}.unitCost`, ingredient.costPerUnit);
+            }
+          }}
+        />
+        <NumberInput
+          label={index === 0 ? `Qtd. Pedida (${selectedIngredient?.unit || 'UN'})` : undefined}
+          placeholder="10"
+          min={0.001}
+          decimalScale={3}
+          {...form.getInputProps(`items.${index}.orderedQuantity`)}
+          required
+          error={form.errors[`items.${index}.orderedQuantity`]}
+        />
+        <NumberInput
+          label={index === 0 ? `Custo Unit. (R$ / ${selectedIngredient?.unit || 'UN'})` : undefined}
+          placeholder={selectedIngredient?.costPerUnit ?? '0.00'} // Suggest last known cost
+          min={0}
+          decimalScale={4} // Allow more precision for cost
+          {...form.getInputProps(`items.${index}.unitCost`)}
+          required
+          error={form.errors[`items.${index}.unitCost`]}
+        />
+        <Stack gap={0} mt={index === 0 ? 25 : 0} align="center">
+          <Text size="xs" c="dimmed">Total</Text>
+          {/* 3. Use the itemTotal variable (which is now a number) */}
+          <Text size="sm" fw={500}>{formatCurrency(itemTotal)}</Text>
+        </Stack>
+        <ActionIcon
+          color="red"
+          onClick={() => form.removeListItem("items", index)}
+          mt={index === 0 ? 25 : 0}
+          variant="light"
+          disabled={form.values.items.length <= 1}
+        >
+          <IconTrash size={16} />
+        </ActionIcon>
+      </Group>
+    );
   });
 
 
@@ -276,7 +273,7 @@ export function CreatePurchaseOrderModal({
                 />
                  <Stack gap={0} align="flex-end">
                      <Text size="sm">Valor Total Estimado:</Text>
-                     <Title order={3}>{formatCurrency(totalCost.toNumber())}</Title>
+                     <Title order={3}>{formatCurrency(totalCost)}</Title>
                  </Stack>
              </Group>
 
