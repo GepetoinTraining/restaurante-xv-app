@@ -1,4 +1,4 @@
-// PATH: app/api/buffet/pans/[id]/refill/route.ts
+// PATH: app/api/buffet/[id]/refill/route.ts
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { getSession } from "@/lib/auth";
@@ -50,34 +50,52 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             // 1. Get Pan details (including ingredientId and capacity)
             const pan = await tx.buffetPan.findUnique({
                 where: { id: panId },
-                include: { ingredient: { select: { id: true, name: true, unit: true } } } // Include ingredient for error message
+                // ---- START FIX ----
+                // Include ingredient details *including costPerUnit*
+                include: { ingredient: { select: { id: true, name: true, unit: true, costPerUnit: true } } }
+                // ---- END FIX ----
             });
             if (!pan) throw new Error("Cuba do buffet não encontrada.");
             if (!pan.ingredient) throw new Error(`Cuba ${panId} não tem um ingrediente associado.`);
 
-            // Ensure refill doesn't exceed capacity (optional, maybe allow overfilling slightly?)
-            // const newQuantity = pan.currentQuantity.plus(quantityToAddDecimal);
-            // if (newQuantity.gt(pan.capacity)) {
-            //     throw new Error(`Quantidade excede a capacidade da cuba (${pan.capacity.toString()} ${pan.ingredient.unit}).`);
-            // }
+            // Explicitly get the ingredient ID after checking pan.ingredient exists
+            const ingredientId = pan.ingredientId;
+            if (!ingredientId) {
+                // This should technically be unreachable due to the pan.ingredient check, but satisfies TS
+                throw new Error(`ID do ingrediente não encontrado para a cuba ${panId}.`);
+            }
+
+            // Ensure refill doesn't exceed capacity (optional)
+            // ...
 
             // 2. Deduct from StockHolding at sourceLocationId
-            const ingredientId = pan.ingredientId;
             const requiredQuantity = quantityToAddDecimal;
             let deductedAmount = new Decimal(0);
+            let remainingToDeduct = requiredQuantity;
+
             const holdings = await tx.stockHolding.findMany({
-                where: { ingredientId, venueObjectId: sourceLocationId, quantity: { gt: 0 } },
+                where: { ingredientId: ingredientId, venueObjectId: sourceLocationId, quantity: { gt: 0 } },
                 orderBy: { createdAt: 'asc' } // FIFO
             });
 
             for (const holding of holdings) {
-                const quantityToDeduct = Decimal.min(requiredQuantity.minus(deductedAmount), holding.quantity);
-                await tx.stockHolding.update({ where: { id: holding.id }, data: { quantity: { decrement: quantityToDeduct } } });
-                deductedAmount = deductedAmount.plus(quantityToDeduct);
-                if (deductedAmount.gte(requiredQuantity)) break;
+                if (remainingToDeduct.isZero() || remainingToDeduct.isNegative()) break;
+
+                const quantityToDeductFromHolding = Decimal.min(remainingToDeduct, holding.quantity);
+                // ---- ACCESS costPerUnit which is now selected ----
+                const costPerUnit = holding.costAtAcquisition ?? pan.ingredient.costPerUnit;
+
+                await tx.stockHolding.update({
+                    where: { id: holding.id },
+                    data: { quantity: { decrement: quantityToDeductFromHolding } }
+                });
+
+                deductedAmount = deductedAmount.plus(quantityToDeductFromHolding);
+                remainingToDeduct = remainingToDeduct.minus(quantityToDeductFromHolding);
             }
 
-            if (deductedAmount.lt(requiredQuantity)) {
+            // Check if remainingToDeduct is greater than zero after the loop
+            if (remainingToDeduct.gt(0)) {
                 throw new Error(`Estoque insuficiente de "${pan.ingredient.name}" na origem. Necessário: ${requiredQuantity.toString()}, Disponível: ${deductedAmount.toString()}.`);
             }
 
@@ -89,16 +107,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
                         increment: quantityToAddDecimal
                     }
                 },
-                 include: { ingredient: { select: { id: true, name: true, unit: true } } } // Include for response
+                 // Include for response (costPerUnit not strictly needed here, but doesn't hurt)
+                 include: { ingredient: { select: { id: true, name: true, unit: true, costPerUnit: true } } }
             });
 
-        }, { timeout: 15000 }); // Increase timeout slightly
+        }, { timeout: 15000 });
 
          // Serialize Decimal fields
         const serializedPan = {
              ...updatedPan,
              currentQuantity: updatedPan.currentQuantity.toString(),
              capacity: updatedPan.capacity.toString(),
+             // Serialize ingredient cost too if included in final response object
+             ingredient: updatedPan.ingredient ? {
+                 ...updatedPan.ingredient,
+                 costPerUnit: updatedPan.ingredient.costPerUnit.toString()
+             } : null
         };
 
         return NextResponse.json<ApiResponse<any>>(
@@ -114,7 +138,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
              return NextResponse.json<ApiResponse>({ success: false, error: "Cuba do buffet ou localização de estoque não encontrada." }, { status: 404 });
          }
-         if (error.message.startsWith('Estoque insuficiente') || error.message.startsWith('Cuba do buffet não encontrada') || error.message.includes('capacidade da cuba')) {
+         if (error.message.startsWith('Estoque insuficiente') || error.message.startsWith('Cuba do buffet não encontrada') || error.message.includes('capacidade da cuba') || error.message.includes('ID do ingrediente não encontrado')) {
              return NextResponse.json<ApiResponse>({ success: false, error: error.message }, { status: 400 }); // Bad request due to business logic
          }
         return NextResponse.json<ApiResponse>(
