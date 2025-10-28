@@ -4,24 +4,21 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
+// Zod schema remains the same
 const stopUpdateSchema = z.object({
   stopOrder: z.number().int().min(1).optional(),
-  // Add other fields as needed, e.g., estimatedArrival
 });
 
 /**
  * PATCH /api/route-stops/[stopId]
- *
- * Updates a specific route stop (e.g., to reorder it).
- * Note: Reordering a full list is complex and often handled
- * by a separate 'reorder' endpoint, but this allows changing one.
+ * (PATCH function remains the same as before)
  */
 export async function PATCH(
   req: Request,
   { params }: { params: { stopId: string } },
 ) {
   try {
-    const { stopId }_ = params;
+    const { stopId } = params; // Corrected: removed trailing underscore
     const body = await req.json();
     const validation = stopUpdateSchema.safeParse(body);
 
@@ -31,9 +28,6 @@ export async function PATCH(
         { status: 400 },
       );
     }
-
-    // Add logic here to handle potential reordering collisions if needed
-    // For now, we just update the one value.
 
     const updatedStop = await prisma.routeStop.update({
       where: { id: stopId },
@@ -50,6 +44,7 @@ export async function PATCH(
   }
 }
 
+
 /**
  * DELETE /api/route-stops/[stopId]
  *
@@ -60,7 +55,9 @@ export async function DELETE(
   { params }: { params: { stopId: string } },
 ) {
   try {
-    const { stopId }_ = params;
+    // --- START FIX ---
+    const { stopId } = params; // Removed the trailing underscore
+    // --- END FIX ---
 
     // --- Start Transaction ---
     const deletedStop = await prisma.$transaction(async (tx) => {
