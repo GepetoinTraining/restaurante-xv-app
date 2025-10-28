@@ -38,4 +38,7 @@ export function getStatusInfo(status: PrepTaskStatus | 'default') {
       return { label: status.toUpperCase(), color: 'dark' };
   }
 }
-// ---- END FIX ----
+
+export function toUTC(date: Date): Date {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}

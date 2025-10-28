@@ -17,7 +17,18 @@ import {
     PrepTaskStatus,
     BuffetPan,
     BuffetStation,
-    // Added PrepTaskStatus
+    CompanyClient,
+    Delivery,
+    PanShipment,
+    ServingPan,
+    ServingPanModel,
+    Delivery,
+    Route,
+    RouteStop,
+    Vehicle,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    Supplier,
 } from "@prisma/client";
 
 // --- Client-side Product type with string prices ---
@@ -248,3 +259,80 @@ export type SerializedBuffetPan = Omit<BuffetPan, 'currentQuantity' | 'capacity'
 export type BuffetStationWithPans = Omit<BuffetStation, 'pans'> & {
     pans: SerializedBuffetPan[];
 };
+
+// Type returned by GET /api/serving-pans/by-identifier/[id]
+export type ActivePanShipmentPayload = ServingPan & {
+  panModel: ServingPanModel;
+  panShipments: (PanShipment & {
+    delivery: Delivery & {
+      companyClient: CompanyClient;
+    };
+  })[]; // This array will have 0 or 1 items
+};
+
+// Type for the Pan Return mutation
+export type PanReturnPayload = {
+  inWeightGrams: number;
+};
+
+// Type returned by GET /api/deliveries
+export type DeliveryWithClient = Delivery & {
+  companyClient: Pick<CompanyClient, 'companyName' | 'addressStreet'>;
+  driver: Pick<User, 'name'> | null;
+  vehicle: Pick<Vehicle, 'model' | 'licensePlate'> | null;
+  panShipments: { id: string }[];
+  routeStop: { id: string; routeId: string } | null;
+};
+
+// Type for a single stop, returned as part of a route
+export type RouteStopWithDelivery = RouteStop & {
+  delivery: Delivery & {
+    companyClient: Pick<CompanyClient, 'id' | 'companyName' | 'addressStreet'>;
+  };
+};
+
+// Type for the full route object returned by GET /api/routes
+export type RouteWithStops = Route & {
+  vehicle: Vehicle | null;
+  // We'll fetch driver data separately if needed, or join it. For now, it's just driverId.
+  stops: RouteStopWithDelivery[];
+};
+
+// Type for a simple list of vehicles
+export type VehicleList = Pick<Vehicle, 'id' | 'model' | 'licensePlate'>;
+
+// Type for a simple list of staff (e.g., drivers)
+export type StaffList = Pick<User, 'id' | 'name' | 'role'>;
+
+// Type for the full PurchaseOrder object
+export type PurchaseOrderWithDetails = PurchaseOrder & {
+  supplier: Pick<Supplier, 'id' | 'name'>;
+  items: (PurchaseOrderItem & {
+    ingredient: Pick<Ingredient, 'id' | 'name'>;
+  })[];
+};
+
+// Type for the Financial Report API response
+export type FinancialReport = {
+  startDate: string;
+  endDate: string;
+  summary: {
+    totalCosts: number;
+    totalPurchaseCosts: number;
+    totalWasteCosts: number;
+  };
+  breakdown: {
+    purchaseCosts: number;
+    clientReturnWaste: number;
+    internalWaste: number;
+  };
+};
+
+export type SalesPipelineClient = Pick<
+  CompanyClient,
+  | 'id'
+  | 'companyName'
+  | 'contactName'
+  | 'salesPipelineStage'
+  // Add any other fields you want on the card, e.g., 'dealValue' if we add it later
+>;

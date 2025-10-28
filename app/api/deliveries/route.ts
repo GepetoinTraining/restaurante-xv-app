@@ -7,56 +7,63 @@ import { getSession } from "@/lib/auth";
 
 /**
  * GET /api/deliveries
- * Fetches deliveries, optionally filtered by date, company, or status.
+ *
+ * Fetches deliveries.
+ * Supports filtering by:
+ * - ?date=YYYY-MM-DD (filters by deliveryDate)
+ * - ?unassigned=true (filters for deliveries NOT linked to a RouteStop)
  */
-export async function GET(req: NextRequest) {
-    const session = await getSession();
-    if (!session.user?.isLoggedIn) {
-        return NextResponse.json<ApiResponse>({ success: false, error: "Not authorized" }, { status: 401 });
-    }
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const dateParam = searchParams.get('date');
+  const unassigned = searchParams.get('unassigned') === 'true';
 
-    const { searchParams } = new URL(req.url);
-    const date = searchParams.get("date"); // Expecting YYYY-MM-DD
-    const companyClientId = searchParams.get("companyClientId");
-    const status = searchParams.get("status") as DeliveryStatus | null;
+  let where: Prisma.DeliveryWhereInput = {};
 
-    try {
-        const where: Prisma.DeliveryWhereInput = {};
-        if (date) {
-            const targetDate = new Date(date + 'T00:00:00.000Z');
-            where.deliveryDate = {
-                gte: targetDate,
-                lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
-            };
-        }
-        if (companyClientId) {
-            where.companyClientId = companyClientId;
-        }
-        if (status && Object.values(DeliveryStatus).includes(status)) {
-            where.status = status;
-        }
+  // Date filtering
+  if (dateParam) {
+    const deliveryDate = toUTC(new Date(dateParam));
+    where.deliveryDate = deliveryDate;
+  }
 
-        const deliveries = await prisma.delivery.findMany({
-            where,
-            include: {
-                companyClient: { select: { companyName: true } },
-                route: { select: { id: true } }, // Include basic route info if linked
-                _count: { select: { panShipments: true } } // Count pans in each delivery
-            },
-            orderBy: { deliveryDate: 'desc' },
-        });
+  // Unassigned filtering
+  if (unassigned) {
+    where.routeStop = null; // This is the key change
+  }
 
-        // Serialize date
-        const serializedDeliveries = deliveries.map(d => ({
-            ...d,
-            deliveryDate: d.deliveryDate.toISOString().split('T')[0],
-        }));
+  try {
+    const deliveries = await prisma.delivery.findMany({
+      where,
+      include: {
+        companyClient: {
+          select: { companyName: true, addressStreet: true },
+        },
+        vehicle: {
+          select: { model: true, licensePlate: true },
+        },
+        driver: {
+          select: { name: true },
+        },
+        panShipments: {
+          select: { id: true, outWeightGrams: true },
+        },
+        routeStop: {
+          select: { id: true, routeId: true }, // Include routeStop to confirm it's null
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
-        return NextResponse.json<ApiResponse<any[]>>({ success: true, data: serializedDeliveries });
-    } catch (error) {
-        console.error("Error fetching deliveries:", error);
-        return NextResponse.json<ApiResponse>({ success: false, error: "Server error" }, { status: 500 });
-    }
+    return NextResponse.json(deliveries);
+  } catch (error) {
+    console.error('Failed to fetch deliveries:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
+    );
+  }
 }
 
 /**
