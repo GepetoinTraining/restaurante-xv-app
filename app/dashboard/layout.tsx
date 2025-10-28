@@ -1,42 +1,59 @@
-// app/dashboard/layout.tsx
+// PATH: app/dashboard/layout.tsx
 "use client";
 
-import { AppShell, Burger, Group, Skeleton } from "@mantine/core";
-// ... other imports
-import { ModalsProvider } from '@mantine/modals'; // Import ModalsProvider
+import { AppShell, Burger, Group, Skeleton, Image } from "@mantine/core";
+import { useDisclosure } from '@mantine/hooks'; // Import useDisclosure
+import { ModalsProvider } from '@mantine/modals';
 import { MainNav } from "./components/MainNav";
 import { Notifications } from "@mantine/notifications";
-import { Image } from "@mantine/core";
 import { ReactNode } from "react";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
-  // ... disclosure hooks if you bring them back ...
+  // Add disclosure hook for navbar state
+  const [opened, { toggle }] = useDisclosure();
 
   return (
-    <ModalsProvider> {/* Wrap AppShell with ModalsProvider */}
+    <ModalsProvider>
       <AppShell
         header={{ height: 60 }}
         navbar={{
           width: 250,
           breakpoint: "sm",
+          collapsed: { mobile: !opened }, // Control collapsed state based on hook
         }}
         padding="md"
       >
         <AppShell.Header>
-         {/* ... Header content ... */}
-          {/* Use Acaia logo path */}
-          <Image src="/logo.jpg" alt="Acaia Logo" w={100} fallbackSrc="https://placehold.co/100x40" />
+          <Group h="100%" px="md" justify="space-between">
+            {/* Burger for mobile nav toggle */}
+            <Burger
+              opened={opened}
+              onClick={toggle}
+              hiddenFrom="sm" // Hide burger on larger screens
+              size="sm"
+            />
+            {/* Logo */}
+            <Image src="/logo.jpg" alt="Acaia Logo" h={40} w="auto" fallbackSrc="https://placehold.co/100x40" />
+            {/* Optional: Add user menu or other header items for larger screens here */}
+            {/* Placeholder to keep logo centered-ish when burger is hidden */}
+            <Box w={28} hiddenFrom="sm" />
+          </Group>
         </AppShell.Header>
 
         <AppShell.Navbar p="md">
+          {/* MainNav remains the same */}
           <MainNav />
         </AppShell.Navbar>
 
         <AppShell.Main>
-          <Notifications position="top-right" />
+          {/* Notifications can stay here or move to RootLayout if needed globally */}
+          {/* <Notifications position="top-right" /> */}
           {children}
         </AppShell.Main>
       </AppShell>
     </ModalsProvider>
   );
 }
+
+// Ensure Box is imported if not already
+import { Box } from "@mantine/core";

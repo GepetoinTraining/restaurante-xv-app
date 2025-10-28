@@ -1,9 +1,20 @@
+/* PATH: app/globals.css */
 /* Import Mantine's base styles */
 @import '@mantine/core/styles.css';
+
+/* Optional: Import Montserrat font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
 
 /* Set a dark, on-brand background for the whole app */
 body {
   background-color: #101113; /* A very dark, near-black */
   color: #c1c2c5; /* Mantine's default light text color */
   min-height: 100vh;
+  /* Apply the imported font globally */
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* Optional: Ensure headings also use the font by default if not overridden by theme */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Montserrat', sans-serif;
 }

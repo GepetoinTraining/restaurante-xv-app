@@ -1,5 +1,5 @@
 // PATH: app/dashboard/reports/components/SalesReport.tsx
-// NOTE: This is a NEW FILE in a NEW FOLDER.
+// MODIFIED to include cost data display
 
 "use client";
 
@@ -13,26 +13,29 @@ import {
   Loader,
   Center,
   Table,
+  Divider, // Import Divider
 } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
+import { CostReportResponse } from "@/app/api/reports/costs/route"; // Import Cost Report type
 import { formatCurrency } from "@/lib/utils";
 
 interface SalesReportProps {
-  data: SalesReportResponse | undefined;
+  salesData: SalesReportResponse | undefined;
+  costData: CostReportResponse | undefined; // Add cost data prop
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
 }
 
-// A simple stat card component
-function StatCard({ title, value }: { title: string; value: string }) {
+// Stat card component (unchanged)
+function StatCard({ title, value, color }: { title: string; value: string; color?: string }) {
   return (
     <Paper withBorder p="md" radius="md">
       <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
         {title}
       </Text>
-      <Text fz={32} fw={700}>
+      <Text fz={32} fw={700} c={color}> {/* Apply color if provided */}
         {value}
       </Text>
     </Paper>
@@ -40,7 +43,8 @@ function StatCard({ title, value }: { title: string; value: string }) {
 }
 
 export function SalesReport({
-  data,
+  salesData,
+  costData, // Receive cost data
   isLoading,
   isError,
   error,
@@ -65,7 +69,8 @@ export function SalesReport({
     );
   }
 
-  if (!data) {
+  // Handle case where only one report type might have loaded, or neither
+  if (!salesData && !costData) {
     return (
       <Center h={200}>
         <Text c="dimmed">
@@ -75,12 +80,12 @@ export function SalesReport({
     );
   }
 
-  // Format data for display
-  const totalRevenue = formatCurrency(parseFloat(data.totalRevenue));
-  const totalOrders = data.totalOrders.toString();
-  const totalItemsSold = data.totalItemsSold.toString();
+  // --- Format Sales Data (if available) ---
+  const totalRevenue = salesData ? formatCurrency(parseFloat(salesData.totalRevenue)) : "N/A";
+  const totalOrders = salesData ? salesData.totalOrders.toString() : "N/A";
+  const totalItemsSold = salesData ? salesData.totalItemsSold.toString() : "N/A";
 
-  const productRows = data.topSellingProducts.map((product) => (
+  const productRows = salesData?.topSellingProducts.map((product) => (
     <Table.Tr key={product.productId}>
       <Table.Td>{product.name}</Table.Td>
       <Table.Td>{product.quantity}</Table.Td>
@@ -90,45 +95,74 @@ export function SalesReport({
     </Table.Tr>
   ));
 
+  // --- Format Cost Data (if available) ---
+  const totalPrepCost = costData ? formatCurrency(parseFloat(costData.totalPrepCost)) : "N/A";
+  const totalWasteCost = costData ? formatCurrency(parseFloat(costData.totalWasteCost)) : "N/A";
+  const totalBuffetRevenue = costData ? formatCurrency(parseFloat(costData.totalBuffetRevenue)) : "N/A";
+
+
   return (
     <Stack gap="lg">
-      {/* 1. Stat Grid */}
-      <SimpleGrid cols={{ base: 1, sm: 3 }}>
-        <StatCard title="Receita Total" value={totalRevenue} />
-        <StatCard title="Total de Pedidos" value={totalOrders} />
-        <StatCard title="Itens Vendidos" value={totalItemsSold} />
-      </SimpleGrid>
+      {/* --- Sales Stats Grid --- */}
+      {salesData && (
+          <>
+            <Title order={3} mt="md">Resumo de Vendas</Title>
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                <StatCard title="Receita Total (Vendas)" value={totalRevenue} color="green.4"/>
+                <StatCard title="Total de Pedidos" value={totalOrders} />
+                <StatCard title="Itens Vendidos (Pedidos)" value={totalItemsSold} />
+            </SimpleGrid>
+          </>
+      )}
 
-      {/* 2. Top Selling Products */}
-      <Paper withBorder p="md" radius="md">
-        <Title order={4} mb="md">
-          Produtos Mais Vendidos (Top 10 por Quantidade)
-        </Title>
-        <Table.ScrollContainer minWidth={400}>
-          <Table striped>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Produto</Table.Th>
-                <Table.Th>Quantidade</Table.Th>
-                <Table.Th>Receita Gerada</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {productRows.length > 0 ? (
-                productRows
-              ) : (
+
+      {/* --- Cost Stats Grid --- */}
+      {costData && (
+          <>
+             <Title order={3} mt="lg">Resumo de Custos & Buffet</Title>
+             <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                <StatCard title="Custo de Preparo (Estimado)" value={totalPrepCost} color="orange.4"/>
+                <StatCard title="Custo de Perdas (Registrado)" value={totalWasteCost} color="red.4"/>
+                <StatCard title="Receita Buffet (Pesagem)" value={totalBuffetRevenue} color="blue.4" />
+             </SimpleGrid>
+          </>
+      )}
+
+      {/* --- Divider --- */}
+      {salesData && costData && <Divider my="lg" />}
+
+      {/* --- Top Selling Products Table --- */}
+      {salesData && (
+        <Paper withBorder p="md" radius="md">
+            <Title order={4} mb="md">
+            Produtos Mais Vendidos (Top 10 por Quantidade)
+            </Title>
+            <Table.ScrollContainer minWidth={400}>
+            <Table striped>
+                <Table.Thead>
                 <Table.Tr>
-                  <Table.Td colSpan={3}>
-                    <Text c="dimmed" ta="center">
-                      Nenhum produto vendido neste período.
-                    </Text>
-                  </Table.Td>
+                    <Table.Th>Produto</Table.Th>
+                    <Table.Th>Quantidade</Table.Th>
+                    <Table.Th>Receita Gerada</Table.Th>
                 </Table.Tr>
-              )}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      </Paper>
+                </Table.Thead>
+                <Table.Tbody>
+                {productRows && productRows.length > 0 ? (
+                    productRows
+                ) : (
+                    <Table.Tr>
+                    <Table.Td colSpan={3}>
+                        <Text c="dimmed" ta="center">
+                        Nenhum produto vendido neste período.
+                        </Text>
+                    </Table.Td>
+                    </Table.Tr>
+                )}
+                </Table.Tbody>
+            </Table>
+            </Table.ScrollContainer>
+        </Paper>
+      )}
     </Stack>
   );
 }

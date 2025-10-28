@@ -1,18 +1,18 @@
 // PATH: app/dashboard/components/MainNav.tsx
 "use client";
 
-import { NavLink, Stack, Button, Text, Skeleton } from "@mantine/core";
+import { NavLink, Stack, Button, Text, Skeleton, ScrollArea } from "@mantine/core";
 import {
     LayoutDashboard, Users, Martini, Archive, Calculator,
-    UserPlus, Briefcase, LineChart, LogOut, Armchair, Music, Disc, Package,
-    CookingPot, ClipboardCheck, ClipboardList, // New icons for tasks/management
-    Receipt, Scale, Trash2 // New icons for invoices, weigh, waste
-} from "lucide-react";
+    UserPlus, LineChart, LogOut, Armchair, Package, // Removed Music, Disc
+    CookingPot, ClipboardCheck, ClipboardList,
+    Receipt, Scale, Trash2
+} from "lucide-react"; // Removed Music, Disc icons
 import { usePathname, useRouter } from "next/navigation";
 import React, { useState, useEffect } from "react";
 import { ApiResponse, StaffSession } from "@/lib/types";
 
-// Updated navigation links including catering workflow placeholders
+// Updated navigation links - Removed unimplemented ones and Vinyl
 const links = [
     // Core Links
     { icon: LayoutDashboard, label: "Visão Geral", href: "/dashboard/live" },
@@ -24,18 +24,18 @@ const links = [
     { icon: Martini, label: "Produtos & Receitas", href: "/dashboard/products" },
     { icon: Package, label: "Ingredientes", href: "/dashboard/ingredients"},
     { icon: CookingPot, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"},
-    { icon: Archive, label: "Estoque Detalhado", href: "/dashboard/stock" }, // Renamed slightly
+    { icon: Archive, label: "Estoque Detalhado", href: "/dashboard/stock" },
 
-    // Catering Workflow Links (Placeholders initially)
+    // Catering Workflow Links
     { icon: ClipboardCheck, label: "Minhas Tarefas", href: "/dashboard/my-tasks" },
     { icon: ClipboardList, label: "Gerenciar Preparos", href: "/dashboard/prep-management" },
     { icon: Receipt, label: "Entrada (Invoices)", href: "/dashboard/invoices" },
-    { icon: Scale, label: "Buffet & Pesagem", href: "/dashboard/weigh-station" }, // Combined for now
+    { icon: Scale, label: "Buffet & Pesagem", href: "/dashboard/weigh-station" },
     { icon: Trash2, label: "Registro de Perdas", href: "/dashboard/waste" },
 
     // Entertainment
-    { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" },
-    { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" },
+    // { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" }, // <-- REMOVED
+    // { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" }, // <-- REMOVED
 
     // Admin & Reporting
     { icon: UserPlus, label: "Equipe", href: "/dashboard/staff" },
@@ -75,13 +75,14 @@ export function MainNav() {
 
     const handleLogout = async () => {
         await fetch("/api/auth", { method: "DELETE" });
-        router.push("/");
-        router.refresh();
+        router.push("/"); // Redirect to landing page after logout
+        router.refresh(); // Refresh to clear any cached state
     };
 
 
     return (
         <Stack justify="space-between" style={{ height: "100%" }}>
+            {/* Added ScrollArea for long navigation lists */}
             <ScrollArea type="auto" style={{ flexGrow: 1, paddingRight: 'var(--mantine-spacing-md)' /* Prevent scrollbar overlap */ }}>
                 <Stack>
                     {links.map((link) => (
@@ -115,13 +116,13 @@ export function MainNav() {
                                       backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.gray[1],
                                   },
                                 },
-                                // leftSection: {}, // Removed if not needed
                             })}
                         />
                     ))}
                 </Stack>
             </ScrollArea>
 
+            {/* User Info and Logout Button */}
             <Stack gap="xs" pt="md" style={{ borderTop: `1px solid var(--mantine-color-default-border)`}}>
                  {loadingSession ? (
                     <Skeleton height={15} width="70%" radius="sm" />
@@ -143,5 +144,3 @@ export function MainNav() {
         </Stack>
     );
 }
-// Need to import ScrollArea
-import { ScrollArea } from "@mantine/core";
