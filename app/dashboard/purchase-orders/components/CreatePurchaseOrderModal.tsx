@@ -16,14 +16,15 @@ import {
   Title,
   Divider,
   ScrollArea,
-  Alert
+  Alert,
+  TextInput
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import 'dayjs/locale/pt-br';
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { randomId } from "@mantine/hooks";
-import type { PurchaseOrder, Supplier, Ingredient } from '@prisma/client';
+import type { Supplier, Ingredient } from "@prisma/client";
 import { SerializedIngredientDef } from "@/lib/types"; // Import Ingredient type for dropdown
 import { IconTrash } from "@tabler/icons-react";
 import { formatCurrency } from "@/lib/utils";
@@ -61,7 +62,7 @@ export function CreatePurchaseOrderModal({
       expectedDeliveryDate: null as Date | null,
       invoiceNumber: "",
       notes: "",
-      items: formList<PurchaseOrderItemForm>([]), // Use formList for dynamic items
+      items: [] as PurchaseOrderItemForm[], // Use formList for dynamic items
     },
     validate: {
       items: {
@@ -82,7 +83,7 @@ export function CreatePurchaseOrderModal({
   // Add one empty item row when modal opens if empty
   useEffect(() => {
     if (opened && form.values.items.length === 0) {
-      form.addListItem('items', { key: randomId(), ingredientId: null, orderedQuantity: '', unitCost: '' });
+      form.insertListItem('items', { key: randomId(), ingredientId: null, orderedQuantity: '', unitCost: '' });
     } else if (!opened) {
         form.reset(); // Reset form when modal closes
     }
@@ -255,7 +256,7 @@ export function CreatePurchaseOrderModal({
                     </ScrollArea.Autosize>
                     <Button
                         variant="outline"
-                        onClick={() => form.addListItem('items', { key: randomId(), ingredientId: null, orderedQuantity: '', unitCost: '' })}
+                        onClick={() => form.insertListItem('items', { key: randomId(), ingredientId: null, orderedQuantity: '', unitCost: '' })}
                         size="xs"
                         disabled={!ingredients || ingredients.length === 0}
                     >
