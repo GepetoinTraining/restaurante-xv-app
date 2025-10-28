@@ -1,27 +1,31 @@
+// PATH: components/StatCard.tsx
 "use client";
 
-import { Paper, Text, Group, ThemeIcon } from "@mantine/core";
+import { Paper, Group, Text } from "@mantine/core";
 import {
   DollarSign,
-  Users,
   TrendingUp,
-  UserCheck,
+  User,
+  Users,
   Package,
 } from "lucide-react";
+import classes from "./StatCard.module.css"; // Assuming you have a CSS module
 
-type StatCardProps = {
-  title: string;
-  value: string;
-  icon: "dollars" | "average" | "visits" | "staff" | "product";
-};
-
+// Define the icons map
 const icons = {
-  dollar: DollarSign,
+  dollars: DollarSign, // Corrected key from previous step
   average: TrendingUp,
-  visits: Users,
-  staff: UserCheck,
+  visits: User,
+  staff: Users,
   product: Package,
 };
+
+// Define prop types
+interface StatCardProps {
+  title: string;
+  value: string;
+  icon: keyof typeof icons; 
+}
 
 export function StatCard({ title, value, icon }: StatCardProps) {
   const Icon = icons[icon];
@@ -29,15 +33,21 @@ export function StatCard({ title, value, icon }: StatCardProps) {
   return (
     <Paper withBorder p="md" radius="md">
       <Group justify="space-between">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+        <Text size="xs" c="dimmed" className={classes.title}>
           {title}
         </Text>
-        <ThemeIcon color="privacyGold" variant="light" size={28} radius="md">
-          <Icon size={16} />
-        </ThemeIcon>
+        {/* ---- START FIX: Pass stroke as a string ---- */}
+        <Icon className={classes.icon} size="1.4rem" stroke="1.5" /> 
+        {/* ---- END FIX ---- */}
       </Group>
-      <Text fz={28} fw={700} mt="sm">
-        {value}
+
+      <Group align="flex-end" gap="xs" mt={25}>
+        <Text className={classes.value}>{value}</Text>
+        {/* Example diff section if needed later */}
+      </Group>
+
+      <Text fz="xs" c="dimmed" mt={7}>
+        Comparado com o mês anterior
       </Text>
     </Paper>
   );
