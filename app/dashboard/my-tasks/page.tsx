@@ -9,7 +9,7 @@ import { IconAlertCircle, IconMapPin } from "@tabler/icons-react";
 import { useState } from "react";
 import { notifications } from "@mantine/notifications";
 import { useDisclosure } from "@mantine/hooks";
-import { WorkflowCard } from "@/app/components/WorkflowCard"; // <-- This is the component
+import { WorkflowCard } from "@/app/components/WorkflowCard"; 
 import { AssignTaskModal } from "../prep-management/components/AssignTaskModal";
 import { CompletePrepTaskModal } from "./components/CompletePrepTaskModal";
 
@@ -58,14 +58,14 @@ function PrepTasksPageContent() {
             fetch(`/api/prep-tasks/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status, ...data }), // Send status and optional data (like quantityRun)
+                body: JSON.stringify({ status, ...data }), 
             }).then(res => res.json()).then(apiRes => {
                 if (!apiRes.success) throw new Error(apiRes.error || "Failed to update task");
                 return apiRes.data;
             }),
         onSuccess: (updatedTask) => {
             queryClientInstance.invalidateQueries({ queryKey: ['myPrepTasks'] });
-            queryClientInstance.invalidateQueries({ queryKey: ['allPrepTasks'] }); // Invalidate manager's view too
+            queryClientInstance.invalidateQueries({ queryKey: ['allPrepTasks'] }); 
             
             notifications.show({
                 title: 'Tarefa Atualizada!',
@@ -87,8 +87,6 @@ function PrepTasksPageContent() {
 
     // --- Handlers ---
     
-    // Generic handler for simple status changes (e.g., Start)
-    // More complex actions (Complete, Assign) will open modals
     const handleStatusUpdate = (id: string, newStatus: string, data?: any) => {
         if (newStatus === 'COMPLETED') {
             const task = tasks?.find(t => t.id === id);
@@ -97,12 +95,10 @@ function PrepTasksPageContent() {
                 openCompleteModal();
             }
         } else {
-            // For simple updates like IN_PROGRESS or CANCELLED
             updateTaskMutation.mutate({ id, status: newStatus, data });
         }
     };
 
-    // Handler for completing with quantity
     const handleCompleteSubmit = (actualQuantity: string) => {
         if (taskToComplete) {
             updateTaskMutation.mutate({
@@ -113,26 +109,23 @@ function PrepTasksPageContent() {
         }
     };
     
-    // Handler for re-assigning (opens assign modal)
     const handleAssignClick = (task: SerializedPrepTask) => {
         setTaskToAssign(task);
         openAssignModal();
     };
 
-     // Handler for submitting assignment
-    const handleAssignSubmit = (assignedToUserId: string) => {
+    // This function signature (string | null) matches the 'onAssign' prop
+    const handleAssignSubmit = (assignedToUserId: string | null) => {
         if (taskToAssign) {
             updateTaskMutation.mutate({
                 id: taskToAssign.id,
-                status: 'ASSIGNED', // Re-assigning
+                status: assignedToUserId ? 'ASSIGNED' : 'PENDING', // If null, set to PENDING
                 data: { assignedToUserId }
             });
         }
     };
 
-    // Handler for delete (if needed, though WorkflowCard doesn't show it for these statuses)
     const handleDeleteClick = (id: string) => {
-        // Implement delete mutation if required
         console.log("Delete clicked", id);
          notifications.show({
             title: 'Exclusão Pendente',
@@ -165,24 +158,17 @@ function PrepTasksPageContent() {
                     <>
                         {tasks && tasks.length > 0 ? (
                             <Grid>
-                                {tasks.map(task => {
-                                    // ---- START FIX ----
-                                    // The WorkflowCard component takes the entire task object
-                                    // and its own internal logic handles the display.
-                                    // We just need to pass the task and the handlers.
-                                    return (
-                                        <Grid.Col span={{ base: 12, sm: 6, md: 4 }} key={task.id}>
-                                            <WorkflowCard
-                                                key={task.id}
-                                                task={task}
-                                                onUpdateStatus={handleStatusUpdate}
-                                                onAssign={handleAssignClick}
-                                                onDelete={handleDeleteClick}
-                                            />
-                                        </Grid.Col>
-                                    );
-                                    // ---- END FIX ----
-                                })}
+                                {tasks.map(task => (
+                                    <Grid.Col span={{ base: 12, sm: 6, md: 4 }} key={task.id}>
+                                        <WorkflowCard
+                                            key={task.id}
+                                            task={task}
+                                            onUpdateStatus={handleStatusUpdate}
+                                            onAssign={handleAssignClick}
+                                            onDelete={handleDeleteClick}
+                                        />
+                                    </Grid.Col>
+                                ))}
                             </Grid>
                         ) : (
                             <Text ta="center" c="dimmed" mt="xl">
@@ -198,7 +184,9 @@ function PrepTasksPageContent() {
                 opened={assignModalOpened}
                 onClose={closeAssignModal}
                 staffList={staffList || []}
-                onSubmit={handleAssignSubmit}
+                // ---- START FIX ----
+                onAssign={handleAssignSubmit} 
+                // ---- END FIX ----
                 task={taskToAssign}
             />
 
