@@ -1,65 +1,65 @@
 // PATH: app/dashboard/live/components/ActiveVisits.tsx
-"use client";
+'use client';
 
-import { Paper, Title, Text, Stack, Card, Group, Badge } from "@mantine/core";
-import { LiveVisit } from "@/app/api/live/route"; // Import the new type
+import { Paper, Title, Stack, Group, Text, Badge, ActionIcon, Tooltip } from "@mantine/core";
+import { LiveVisit } from "../../../api/live/route"; // Import the type from the API route
+import { IconUser, IconClock, IconTag, IconMapPin, IconCurrencyDollar, IconEye } from "@tabler/icons-react"; // Added missing imports
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import 'dayjs/locale/pt-br';
 import { formatCurrency } from "@/lib/utils";
-import { IconUser, IconTag, IconMapPin } from "@tabler/icons-react";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import Link from "next/link"; // Import Link
 
-interface ActiveVisitsProps {
-  visits: LiveVisit[];
-}
+dayjs.extend(relativeTime);
+dayjs.locale('pt-br');
+
+type ActiveVisitsProps = {
+    visits: LiveVisit[];
+};
 
 export function ActiveVisits({ visits }: ActiveVisitsProps) {
-  return (
-    <Paper withBorder p="md" radius="md">
-      <Title order={4}>Clientes Ativos ({visits.length})</Title>
-      <Text size="sm" c="dimmed" mb="md">
-        Clientes que estão atualmente na casa.
-      </Text>
-      <Stack>
-        {visits.length > 0 ? (
-          visits.map((visit) => (
-            <Card withBorder radius="sm" key={visit.id}>
-              <Group justify="space-between">
-                <Stack gap="xs">
-                  <Group gap="xs">
-                    <IconUser size={16} />
-                    <Text fw={500}>{visit.client.name}</Text>
-                  </Group>
-                  <Group gap="xs">
-                    <IconTag size={16} />
-                    <Text size="sm">Tab: {visit.tab.rfid}</Text>
-                  </Group>
-                  <Group gap="xs">
-                    <IconMapPin size={16} />
-                    <Text size="sm">
-                      Local: {visit.venueObject?.name || "Check-in (sem local)"}
-                    </Text>
-                  </Group>
-                </Stack>
-                <Stack align="flex-end" gap="xs">
-                  <Badge color="green" variant="light">
-                    {formatDistanceToNow(new Date(visit.checkInAt), {
-                      addSuffix: true,
-                      locale: ptBR,
-                    })}
-                  </Badge>
-                  <Text size="lg" fw={700}>
-                    {/* Price is a string, parse before formatting */}
-                    {/* Cast to unknown first, then to string */}
-                    {formatCurrency(parseFloat(visit.totalSpent as unknown as string))}
-                  </Text>
-                </Stack>
-              </Group>
-            </Card>
-          ))
-        ) : (
-          <Text c="dimmed">Nenhum cliente na casa.</Text>
-        )}
-      </Stack>
-    </Paper>
-  );
+    return (
+        <Paper withBorder shadow="md" p="md">
+            <Title order={3}>Visitas Ativas ({visits.length})</Title>
+            <Stack gap="md" mt="md">
+                {visits.length === 0 && (
+                    <Text c="dimmed" fs="italic">Nenhuma visita ativa no momento.</Text>
+                )}
+                {visits.map((visit) => (
+                    <Paper key={visit.id} withBorder p="sm" radius="sm">
+                        <Stack gap="xs">
+                            <Group justify="space-between">
+                                <Text fw={500}>{visit.client.name}</Text>
+                                <Tooltip label="Ver detalhes do cliente">
+                                    <ActionIcon component={Link} href={`/dashboard/clients/${visit.clientId}`} variant="subtle" size="sm">
+                                        <IconEye size={16} />
+                                    </ActionIcon>
+                                </Tooltip>
+                            </Group>
+                            <Group gap="xs">
+                                <IconClock size={16} />
+                                <Text size="sm" c="dimmed">Check-in: {dayjs(visit.checkInAt).fromNow()}</Text>
+                            </Group>
+                            {/* --- START FIX --- */}
+                            {visit.tab && ( // Check if tab exists before accessing rfid
+                                <Group gap="xs">
+                                    <IconTag size={16} />
+                                    <Text size="sm">Tab: {visit.tab.rfid}</Text>
+                                </Group>
+                            )}
+                            {/* --- END FIX --- */}
+                            <Group gap="xs">
+                                <IconMapPin size={16} />
+                                <Text size="sm">{visit.venueObject?.name || 'Local não definido'}</Text>
+                            </Group>
+                             <Group gap="xs">
+                                <IconCurrencyDollar size={16} />
+                                <Text size="sm" fw={500}>Gasto até agora: {formatCurrency(parseFloat(visit.totalSpent))}</Text>
+                            </Group>
+                        </Stack>
+                    </Paper>
+                ))}
+            </Stack>
+        </Paper>
+    );
 }
