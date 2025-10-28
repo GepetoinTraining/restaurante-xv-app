@@ -133,7 +133,7 @@ export function RouteManager() {
   const sensors = useSensors(useSensor(MouseSensor), useSensor(TouchSensor));
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over }_ = event;
+    const { active, over } = event;
 
     // Check if we are dropping over a valid dropzone
     if (!over) return;
