@@ -22,7 +22,9 @@ export async function GET() {
     });
     return NextResponse.json({ success: true, data: floorPlans });
   } catch (error) {
-    return handleApiError(error);
+    // --- START FIX: Add error message string ---
+    return handleApiError(error, "Failed to fetch floor plans");
+    // --- END FIX ---
   }
 }
 
@@ -45,6 +47,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: newFloorPlan }, { status: 201 });
   } catch (error) {
-    return handleApiError(error);
+    // --- START FIX: Add error message string ---
+    return handleApiError(error, "Failed to create floor plan");
+    // --- END FIX ---
   }
 }

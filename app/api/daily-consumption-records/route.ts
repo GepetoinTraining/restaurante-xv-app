@@ -29,7 +29,9 @@ export async function POST(req: Request) {
 
     if (!validation.success) {
       return NextResponse.json(
-        { error: 'Invalid request body', details: validation.error.errors },
+        // --- START FIX: Changed .errors to .issues ---
+        { error: 'Invalid request body', details: validation.error.issues },
+        // --- END FIX ---
         { status: 400 },
       );
     }

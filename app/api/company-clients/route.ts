@@ -2,7 +2,9 @@
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { CompanyClient, Prisma, SalesPipelineStage } from "@prisma/client";
+// --- START FIX: Removed 'SalesPipelineStage' as it's not an enum ---
+import { CompanyClient, Prisma } from "@prisma/client";
+// --- END FIX ---
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
@@ -20,7 +22,6 @@ export async function GET(req: NextRequest) {
     if (!session.user?.isLoggedIn) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Not authorized" }, { status: 401 });
     }
-    // TODO: Add role-based access control if needed (e.g., only SALES, MANAGER, OWNER?)
 
     try {
         const clients = await prisma.companyClient.findMany({
@@ -31,9 +32,10 @@ export async function GET(req: NextRequest) {
         const serializedClients = clients.map(client => ({
             ...client,
             consumptionFactor: client.consumptionFactor.toString(),
-            // Ensure lat/long are numbers or null
-            latitude: client.latitude,
-            longitude: client.longitude,
+            // --- START FIX: Removed latitude and longitude as they don't exist on the model ---
+            // latitude: client.latitude,
+            // longitude: client.longitude,
+            // --- END FIX ---
         }));
 
 
@@ -56,40 +58,63 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
+        // --- START FIX: Use correct field names from schema ---
         const {
-            companyName, phone, contactPerson, email,
-            addressStreet, addressCity, addressState, addressZip,
-            employeeCount, consumptionFactor, salesPipelineStage, notes
+            companyName,
+            contactName, // Was contactPerson
+            contactPhone, // Was phone
+            contactEmail, // Was email
+            cnpj,
+            addressStreet,
+            addressNumber, // Added
+            addressComplement, // Added
+            addressDistrict, // Added
+            addressCity,
+            addressState,
+            addressZipCode, // Was addressZip
+            employeeCount,
+            consumptionFactor,
+            salesPipelineStage,
+            notes
         } = body;
+        // --- END FIX ---
 
-        if (!companyName || !phone) {
+        if (!companyName || !contactPhone) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Company Name and Phone are required" }, { status: 400 });
         }
 
         let consumptionFactorDecimal = new Decimal(1.0); // Default
         if (consumptionFactor !== undefined) {
              try {
-                consumptionFactorDecimal = new Decimal(consumptionFactor);
-                if (consumptionFactorDecimal.isNegative()) throw new Error();
+                 consumptionFactorDecimal = new Decimal(consumptionFactor);
+                 if (consumptionFactorDecimal.isNegative()) throw new Error();
             } catch {
-                return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Consumption Factor format" }, { status: 400 });
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Consumption Factor format" }, { status: 400 });
             }
         }
 
         const data: Prisma.CompanyClientCreateInput = {
             companyName,
-            phone,
-            contactPerson,
-            email,
+            // --- START FIX: Use correct field names ---
+            contactName,
+            contactPhone,
+            contactEmail,
+            cnpj,
             addressStreet,
+            addressNumber,
+            addressComplement,
+            addressDistrict,
             addressCity,
             addressState,
-            addressZip,
-            // latitude, // TODO: Add geocoding later if needed
-            // longitude,
+            addressZipCode,
+            // --- END FIX ---
             employeeCount: employeeCount ? parseInt(employeeCount, 10) : null,
-            consumptionFactor: consumptionFactorDecimal,
-            salesPipelineStage: salesPipelineStage as SalesPipelineStage || SalesPipelineStage.LEAD,
+            // --- START FIX: Convert Decimal to number (Float) ---
+            consumptionFactor: consumptionFactorDecimal.toNumber(),
+            // --- END FIX ---
+            // --- START FIX: Use string literal for default stage ---
+            salesPipelineStage: salesPipelineStage || "LEAD",
+            // --- END FIX ---
             notes,
         };
 
@@ -105,9 +130,11 @@ export async function POST(req: NextRequest) {
         console.error("Error creating company client:", error);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
              let field = error.meta?.target as string[];
+             // --- START FIX: Check for correct field names ---
              if (field?.includes('companyName')) return NextResponse.json<ApiResponse>({ success: false, error: "Company name already exists" }, { status: 409 });
-             if (field?.includes('phone')) return NextResponse.json<ApiResponse>({ success: false, error: "Phone number already exists" }, { status: 409 });
-             if (field?.includes('email')) return NextResponse.json<ApiResponse>({ success: false, error: "Email already exists" }, { status: 409 });
+             if (field?.includes('contactPhone')) return NextResponse.json<ApiResponse>({ success: false, error: "Phone number already exists" }, { status: 409 });
+             if (field?.includes('contactEmail')) return NextResponse.json<ApiResponse>({ success: false, error: "Email already exists" }, { status: 409 });
+             // --- END FIX ---
         }
         return NextResponse.json<ApiResponse>({ success: false, error: "Server error" }, { status: 500 });
     }

@@ -44,6 +44,8 @@ export async function GET(request: Request, { params }: Params) {
 
     return NextResponse.json({ success: true, data: floorPlan });
   } catch (error) {
-    return handleApiError(error);
+    // --- START FIX: Add error message string ---
+    return handleApiError(error, "Failed to fetch floor plan");
+    // --- END FIX ---
   }
 }

@@ -56,12 +56,14 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    if (type === TransactionType.SPEND && amountDecimal.isPositive()) {
+    // --- START FIX: Use correct Enum values from schema ---
+    if (type === TransactionType.PURCHASE && amountDecimal.isPositive()) {
         amountDecimal = amountDecimal.negated();
     }
-    if (type === TransactionType.TOP_UP && amountDecimal.isNegative()) {
+    if (type === TransactionType.DEPOSIT && amountDecimal.isNegative()) {
+    // --- END FIX ---
        return NextResponse.json<ApiResponse>(
-          { success: false, error: "Top-up deve ser um valor positivo" },
+          { success: false, error: "Depósito (Top-up) deve ser um valor positivo" },
           { status: 400 }
         );
     }
@@ -95,14 +97,11 @@ export async function POST(req: NextRequest) {
           type: type as TransactionType,
           status: status as TransactionStatus,
           proofOfPay: proofOfPay || null,
-          // ---- START FIX ----
-          // Use the scalar foreign key field 'approvedById'
+          // This part is correct, using the scalar field
           approvedById:
             status === TransactionStatus.COMPLETED ? user.id : null,
-          // Also set 'approvedAt' as defined in the schema
           approvedAt:
             status === TransactionStatus.COMPLETED ? new Date() : null,
-          // ---- END FIX ----
         },
       });
 
@@ -125,7 +124,6 @@ export async function POST(req: NextRequest) {
     const serializedTransaction = {
       ...newTransaction,
       amount: newTransaction.amount.toString(),
-      // approvedById and approvedAt are fine as-is
     };
 
     return NextResponse.json<ApiResponse<any>>(

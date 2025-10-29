@@ -43,7 +43,9 @@ export async function POST(req: Request) {
 
     if (!validation.success) {
       return NextResponse.json(
-        { error: 'Invalid request body', details: validation.error.errors },
+        // --- START FIX: Changed .errors to .issues ---
+        { error: 'Invalid request body', details: validation.error.issues },
+        // --- END FIX ---
         { status: 400 },
       );
     }
@@ -92,8 +94,10 @@ export async function POST(req: Request) {
 
     // 3. Calculate V1 Prediction
     // Base = (Employee Count * Base Consumption Factor)
+    // --- START FIX: Use client.consumptionFactor which is a number (Float) ---
     const baseConsumption =
       client.employeeCount * (client.consumptionFactor || 1.0);
+    // --- END FIX ---
 
     // Weather Adjustment
     const weatherAdjustment = getWeatherAdjustment(

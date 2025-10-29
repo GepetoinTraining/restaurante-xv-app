@@ -2,7 +2,9 @@
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { ServingPan, ServingPanStatus, Prisma } from "@prisma/client";
+// --- START FIX: Corrected Enum import ---
+import { ServingPan, PanStatus, Prisma } from "@prisma/client";
+// --- END FIX ---
 import { getSession } from "@/lib/auth";
 
 /**
@@ -16,22 +18,26 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status") as ServingPanStatus | null;
+    // --- START FIX: Use correct Enum ---
+    const status = searchParams.get("status") as PanStatus | null;
+    // --- END FIX ---
     const modelId = searchParams.get("modelId");
 
     try {
         const where: Prisma.ServingPanWhereInput = {};
-        if (status && Object.values(ServingPanStatus).includes(status)) {
+        // --- START FIX: Use correct Enum ---
+        if (status && Object.values(PanStatus).includes(status)) {
             where.status = status;
         }
+        // --- END FIX ---
         if (modelId) {
-            where.modelId = modelId;
+            where.panModelId = modelId; // Corrected field name
         }
 
         const pans = await prisma.servingPan.findMany({
             where,
             include: {
-                model: true // Include model details
+                panModel: true // Corrected relation name
             },
             orderBy: { uniqueIdentifier: 'asc' },
         });
@@ -39,11 +45,13 @@ export async function GET(req: NextRequest) {
         // Serialize model decimals
          const serializedPans = pans.map(pan => ({
             ...pan,
-            model: {
-                ...pan.model,
-                capacityKg: pan.model.capacityKg?.toString(),
-                tareWeightKg: pan.model.tareWeightKg.toString(),
+            // --- START FIX: Use correct relation and field names ---
+            panModel: {
+                ...pan.panModel,
+                capacityL: pan.panModel.capacityL?.toString(),
+                tareWeightG: pan.panModel.tareWeightG?.toString(),
             }
+            // --- END FIX ---
          }));
 
 
@@ -60,38 +68,45 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    // Assuming MANAGER or OWNER can add physical inventory
     if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
     try {
         const body = await req.json();
-        const { uniqueIdentifier, modelId, status, notes } = body;
+        // --- START FIX: Use correct field name ---
+        const { uniqueIdentifier, panModelId, status, notes } = body;
+        // --- END FIX ---
 
-        if (!uniqueIdentifier || !modelId) {
+        // --- START FIX: Use correct field name ---
+        if (!uniqueIdentifier || !panModelId) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Unique Identifier and Model ID are required" }, { status: 400 });
         }
+        // --- END FIX ---
 
         const data: Prisma.ServingPanCreateInput = {
             uniqueIdentifier,
-            model: { connect: { id: modelId } },
-            status: (status as ServingPanStatus) || ServingPanStatus.AVAILABLE,
+            // --- START FIX: Use correct relation and Enum ---
+            panModel: { connect: { id: panModelId } },
+            status: (status as PanStatus) || PanStatus.AVAILABLE,
+            // --- END FIX ---
             notes,
         };
 
         const newPan = await prisma.servingPan.create({
             data,
-            include: { model: true }
+            include: { panModel: true } // Corrected relation name
         });
 
         const serializedPan = {
              ...newPan,
-             model: {
-                ...newPan.model,
-                capacityKg: newPan.model.capacityKg?.toString(),
-                tareWeightKg: newPan.model.tareWeightKg.toString(),
+             // --- START FIX: Use correct relation and field names ---
+             panModel: {
+                ...newPan.panModel,
+                capacityL: newPan.panModel.capacityL?.toString(),
+                tareWeightG: newPan.panModel.tareWeightG?.toString(),
             }
+            // --- END FIX ---
         };
 
         return NextResponse.json<ApiResponse<any>>({ success: true, data: serializedPan }, { status: 201 });
@@ -101,7 +116,7 @@ export async function POST(req: NextRequest) {
             if (error.code === 'P2002' && error.meta?.target === 'ServingPan_uniqueIdentifier_key') {
                 return NextResponse.json<ApiResponse>({ success: false, error: "Unique identifier already exists" }, { status: 409 });
             }
-            if (error.code === 'P2025') { // Foreign key constraint failed on connect
+            if (error.code === 'P2025') { 
                  return NextResponse.json<ApiResponse>({ success: false, error: "Serving pan model not found" }, { status: 404 });
             }
         }

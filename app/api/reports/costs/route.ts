@@ -1,159 +1,133 @@
-// PATH: app/api/reports/costs/route.ts
-import { prisma } from "@/lib/prisma";
-import { ApiResponse } from "@/lib/types";
-import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { Decimal } from "@prisma/client/runtime/library";
-import { PrepTaskStatus, TransactionType } from "@prisma/client"; // Added TransactionType
+// PATH: app/api/reports/financial/route.ts
 
-// Define the response structure for the cost report
-export type CostReportResponse = {
-  startDate: string;
-  endDate: string;
-  totalPrepCost: string; 
-  totalWasteCost: string; 
-  totalBuffetRevenue: string; 
-};
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { toUTC } from '@/lib/utils'; // --- START FIX: Added missing import ---
+import { Decimal } from '@prisma/client/runtime/library';
+// --- START FIX: Added missing enum imports ---
+import { POStatus, WasteReason } from '@prisma/client';
+// --- END FIX ---
+
 
 /**
- * GET /api/reports/costs
- * Fetches aggregated cost data (prep, waste, buffet) for a given date range.
+ * GET /api/reports/financial
+ *
+ * Generates a financial report for a given date range.
+ * Query Params:
+ * - ?startDate=YYYY-MM-DD
+ * - ?endDate=YYYY-MM-DD
  */
-export async function GET(req: NextRequest) {
-  const session = await getSession();
-  const user = session.user;
-
-  // Authorization: Only Managers or Owners can view cost reports
-  if (
-    !user?.isLoggedIn ||
-    (user.role !== "MANAGER" && user.role !== "OWNER")
-  ) {
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: "Não autorizado: Apenas Gerente ou Dono" },
-      { status: 401 }
-    );
-  }
-
+export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const startDateParam = searchParams.get("startDate");
-    const endDateParam = searchParams.get("endDate");
 
-    if (!startDateParam || !endDateParam) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: "Datas de início e fim são obrigatórias" },
-        { status: 400 }
-      );
-    }
+    // Default to the last 30 days if no dates are provided
+    const defaultEndDate = toUTC(new Date());
+    const defaultStartDate = toUTC(
+      new Date(defaultEndDate.getTime() - 30 * 24 * 60 * 60 * 1000),
+    );
 
-    const startDate = new Date(startDateParam);
-    const endDate = new Date(endDateParam);
-    endDate.setHours(23, 59, 59, 999); // Ensure end date includes the whole day
+    const startDate = searchParams.get('startDate')
+      ? toUTC(new Date(searchParams.get('startDate')!))
+      : defaultStartDate;
+    const endDate = searchParams.get('endDate')
+      ? toUTC(new Date(searchParams.get('endDate')!))
+      : defaultEndDate;
 
-    // --- 1. Calculate Total Preparation Cost ---
-    const completedPrepTasks = await prisma.prepTask.findMany({
-      where: {
-        status: PrepTaskStatus.COMPLETED,
-        completedAt: {
-          gte: startDate,
-          lte: endDate,
-        },
+    // Ensure endDate includes the entire day
+    endDate.setUTCHours(23, 59, 59, 999);
+
+    // 1. Calculate Total Purchase Costs
+    const purchaseCostData = await prisma.purchaseOrderItem.aggregate({
+      _sum: {
+        totalItemCost: true,
       },
-      include: {
-        prepRecipe: {
-          include: {
-            inputs: {
-              include: {
-                ingredient: true, // Need ingredient costPerUnit
-              },
-            },
-            outputIngredient: true, // Need outputQuantity
+      where: {
+        purchaseOrder: {
+          // --- START FIX: Use enum instead of string ---
+          status: POStatus.RECEIVED,
+          // --- END FIX ---
+          actualDeliveryDate: {
+            gte: startDate,
+            lte: endDate,
           },
         },
       },
     });
 
-    let totalPrepCost = new Decimal(0);
-    for (const task of completedPrepTasks) {
-      const quantityProduced = task.quantityRun ?? task.targetQuantity;
-      if (!task.prepRecipe || !task.prepRecipe.outputQuantity || quantityProduced.isZero() || task.prepRecipe.outputQuantity.isZero()) {
-          console.warn(`Skipping prep task ${task.id}: Missing recipe data or zero output/quantity.`);
-          continue; 
-      }
+    const totalPurchaseCosts = purchaseCostData._sum.totalItemCost || new Decimal(0);
 
-      const runs = quantityProduced.dividedBy(task.prepRecipe.outputQuantity); 
-
-      for (const input of task.prepRecipe.inputs) {
-        if (!input.ingredient) {
-             console.warn(`Skipping prep task ${task.id} input ${input.ingredientId}: Missing ingredient data.`);
-             continue;
-        }
-        const inputCost = input.ingredient.costPerUnit
-                           .times(input.quantity)
-                           .times(runs);          
-        totalPrepCost = totalPrepCost.plus(inputCost);
-      }
-    }
-
-    // --- 2. Calculate Total Waste Cost ---
-    const wasteRecords = await prisma.wasteRecord.findMany({
+    // 2. Calculate Client-Return Waste Costs
+    const clientWasteData = await prisma.wasteRecord.aggregate({
+      _sum: {
+        costValue: true,
+      },
       where: {
-        createdAt: { 
+        // --- START FIX: Use enum instead of string ---
+        reason: WasteReason.CLIENT_RETURN,
+        // --- END FIX ---
+        createdAt: {
           gte: startDate,
           lte: endDate,
         },
       },
-      select: {
-        // ---- START FIX ----
-        // The field in your schema.prisma is 'costValue'
-        costValue: true, 
-        // ---- END FIX ----
+    });
+
+    const totalClientReturnWasteCosts =
+      clientWasteData._sum.costValue || new Decimal(0);
+
+    // 3. Calculate Internal Waste Costs (Spoilage, Prep Errors, etc.)
+    const internalWasteData = await prisma.wasteRecord.aggregate({
+      _sum: {
+        costValue: true,
+      },
+      where: {
+        reason: {
+          // --- START FIX: Use enum instead of string ---
+          not: WasteReason.CLIENT_RETURN,
+          // --- END FIX ---
+        },
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
       },
     });
 
-    const totalWasteCost = wasteRecords.reduce(
-      // ---- START FIX ----
-      (sum, record) => sum.plus(record.costValue),
-      // ---- END FIX ----
-      new Decimal(0)
+    const totalInternalWasteCosts =
+      internalWasteData._sum.costValue || new Decimal(0);
+
+    // 4. Calculate Total Waste
+    const totalWasteCosts = totalClientReturnWasteCosts.plus(
+      totalInternalWasteCosts,
     );
 
-    // --- 3. Calculate Total Buffet Revenue (from Client Plates) ---
-    const clientPlates = await prisma.clientPlate.findMany({
-        where: {
-            createdAt: { 
-                gte: startDate,
-                lte: endDate,
-            },
-        },
-        select: {
-            calculatedCost: true, // This is the revenue charged to the client
-        }
-    });
+    // 5. Calculate Total Overall Costs
+    const totalCosts = totalPurchaseCosts.plus(totalWasteCosts);
 
-    const totalBuffetRevenue = clientPlates.reduce(
-        (sum, plate) => sum.plus(plate.calculatedCost),
-        new Decimal(0)
-    );
-
-    // --- Assemble the response ---
-    const report: CostReportResponse = {
+    // Prepare the final report object
+    const report = {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
-      totalPrepCost: totalPrepCost.toFixed(2), 
-      totalWasteCost: totalWasteCost.toFixed(2),
-      totalBuffetRevenue: totalBuffetRevenue.toFixed(2),
+      summary: {
+        totalCosts: totalCosts.toNumber(),
+        totalPurchaseCosts: totalPurchaseCosts.toNumber(),
+        totalWasteCosts: totalWasteCosts.toNumber(),
+      },
+      breakdown: {
+        purchaseCosts: totalPurchaseCosts.toNumber(),
+        clientReturnWaste: totalClientReturnWasteCosts.toNumber(),
+        internalWaste: totalInternalWasteCosts.toNumber(),
+      },
+      // We can add more detailed breakdowns here in V2
     };
 
-    return NextResponse.json<ApiResponse<CostReportResponse>>(
-      { success: true, data: report },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error("Error creating cost report:", error);
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: `Erro interno do servidor ao gerar relatório de custos: ${error.message}` },
-      { status: 500 }
+    return NextResponse.json(report);
+  } catch (error) {
+    console.error('Failed to generate financial report:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
     );
   }
 }

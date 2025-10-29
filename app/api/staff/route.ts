@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { hash } from "bcryptjs";
-import { Role, User, VenueObject, Workstation } from "@prisma/client"; // Import User and Role
+import { Role, User, VenueObject, Workstation, Prisma } from "@prisma/client"; 
 
 /**
  * GET /api/staff
@@ -13,13 +13,11 @@ export async function GET(req: NextRequest) {
   try {
     const users = await prisma.user.findMany({
       include: {
-        assignedWorkstations: {
-          // Include the StaffAssignment join table
+        assignedVehicles: { // This relation covers all assignments
           include: {
             venueObject: {
-              // From the join table, get the VenueObject
               include: {
-                workstation: true, // From the VenueObject, get the related Workstation
+                workstation: true, 
               },
             },
           },
@@ -29,18 +27,18 @@ export async function GET(req: NextRequest) {
 
     // We need to shape the data to be more useful for the client
     const formattedUsers = users.map((user) => {
-      // Find the first assignment that points to a venue object
-      // that is linked to a workstation.
-      const workstationAssignment = user.assignedWorkstations.find(
+      const workstationAssignment = user.assignedVehicles.find(
         (assignment) => assignment.venueObject?.workstation
       );
 
       return {
         ...user,
-        // Simplify the structure for the client
-        workstation: workstationAssignment
-          ? workstationAssignment.venueObject.workstation
-          : null,
+        // --- START FIX (ts(18047)): Use optional chaining ---
+        // Use optional chaining to safely access the nested property.
+        // The .find() already ensures it should exist if workstationAssignment
+        // is truthy, but this makes TypeScript happy.
+        workstation: workstationAssignment?.venueObject?.workstation || null,
+        // --- END FIX ---
       };
     });
 
@@ -111,7 +109,7 @@ export async function POST(req: NextRequest) {
         pin: hashedPin,
         role: role as Role,
         // Create the StaffAssignment record if a workstation was found
-        assignedWorkstations: workstationVenueObject
+        assignedVehicles: workstationVenueObject
           ? {
               create: {
                 venueObjectId: workstationVenueObject.id,
@@ -120,7 +118,7 @@ export async function POST(req: NextRequest) {
           : undefined,
       },
       include: {
-        assignedWorkstations: true, // Return the new assignment
+        assignedVehicles: true, // Return the new assignment
       },
     });
 
@@ -130,11 +128,14 @@ export async function POST(req: NextRequest) {
     );
   } catch (error: any) {
     console.error("Error creating user:", error);
-    if (error.code === "P2002" && error.meta?.target.includes("email")) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: "Este email já está em uso" },
-        { status: 409 } // 409 Conflict
-      );
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const target = error.meta?.target as string[];
+      if (target?.includes("email")) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: "Este email já está em uso" },
+          { status: 409 } // 409 Conflict
+        );
+      }
     }
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Erro interno do servidor" },

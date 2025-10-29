@@ -2,13 +2,15 @@
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus, StockHolding, Prisma } from "@prisma/client";
+// --- START FIX: Correct Enum and model import ---
+import { PurchaseOrder, PurchaseOrderItem, POStatus, StockHolding, Prisma } from "@prisma/client";
+// --- END FIX ---
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
 // Type for creating a PO with items
 type PurchaseOrderCreateInput = {
-    supplierId?: string;
+    supplierId: string; // Made required
     orderDate?: string; // ISO string
     expectedDeliveryDate?: string; // ISO string
     invoiceNumber?: string;
@@ -16,6 +18,7 @@ type PurchaseOrderCreateInput = {
     items: {
         ingredientId: string;
         orderedQuantity: string | number;
+        orderedUnit: string; // --- START FIX: Added missing required field ---
         unitCost: string | number;
     }[];
 };
@@ -34,7 +37,9 @@ export async function GET(req: NextRequest) {
         const purchaseOrders = await prisma.purchaseOrder.findMany({
             include: {
                 supplier: { select: { name: true } },
-                createdBy: { select: { name: true } },
+                // --- START FIX: Correct relation name ---
+                approvedBy: { select: { name: true } },
+                // --- END FIX ---
                 items: {
                     include: {
                         ingredient: { select: { name: true, unit: true } }
@@ -47,13 +52,17 @@ export async function GET(req: NextRequest) {
         // Serialize decimals
         const serializedPOs = purchaseOrders.map(po => ({
             ...po,
-            totalAmount: po.totalAmount?.toString(),
+            // --- START FIX: Correct field name ---
+            totalCost: po.totalCost?.toString(),
+            // --- END FIX ---
             items: po.items.map(item => ({
                 ...item,
                 orderedQuantity: item.orderedQuantity.toString(),
                 receivedQuantity: item.receivedQuantity?.toString(),
                 unitCost: item.unitCost.toString(),
-                totalCost: item.totalCost.toString(),
+                // --- START FIX: Correct field name ---
+                totalItemCost: item.totalItemCost.toString(),
+                // --- END FIX ---
             }))
         }));
 
@@ -67,7 +76,6 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/purchase-orders
  * Creates a new purchase order and its items.
- * Does NOT create stock holdings yet (that happens on receive).
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
@@ -80,6 +88,12 @@ export async function POST(req: NextRequest) {
         const body: PurchaseOrderCreateInput = await req.json();
         const { supplierId, orderDate, expectedDeliveryDate, invoiceNumber, notes, items } = body;
 
+        // --- START FIX: Validate required supplierId ---
+        if (!supplierId) {
+             return NextResponse.json<ApiResponse>({ success: false, error: "Supplier ID is required" }, { status: 400 });
+        }
+        // --- END FIX ---
+
         if (!items || items.length === 0) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Purchase order must have at least one item" }, { status: 400 });
         }
@@ -88,9 +102,11 @@ export async function POST(req: NextRequest) {
         const itemsData = [];
 
         for (const item of items) {
-            if (!item.ingredientId || item.orderedQuantity === undefined || item.unitCost === undefined) {
-                return NextResponse.json<ApiResponse>({ success: false, error: "Each item requires ingredientId, orderedQuantity, and unitCost" }, { status: 400 });
+            // --- START FIX: Validate orderedUnit ---
+            if (!item.ingredientId || item.orderedQuantity === undefined || item.unitCost === undefined || !item.orderedUnit) {
+                return NextResponse.json<ApiResponse>({ success: false, error: "Each item requires ingredientId, orderedQuantity, orderedUnit, and unitCost" }, { status: 400 });
             }
+            // --- END FIX ---
             let orderedQuantityDecimal: Decimal;
             let unitCostDecimal: Decimal;
             try {
@@ -107,8 +123,9 @@ export async function POST(req: NextRequest) {
             itemsData.push({
                 ingredientId: item.ingredientId,
                 orderedQuantity: orderedQuantityDecimal,
+                orderedUnit: item.orderedUnit, // --- Added field ---
                 unitCost: unitCostDecimal,
-                totalCost: totalItemCost,
+                totalItemCost: totalItemCost, // --- Correct field name ---
             });
         }
 
@@ -117,11 +134,11 @@ export async function POST(req: NextRequest) {
                 orderDate: orderDate ? new Date(orderDate) : new Date(),
                 expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
                 invoiceNumber,
-                totalAmount: totalOrderAmount,
-                status: PurchaseOrderStatus.PENDING, // Or ORDERED if appropriate
+                totalCost: totalOrderAmount, // --- Correct field name ---
+                status: POStatus.DRAFT, // --- Correct Enum and value ---
                 notes,
-                createdById: userId,
-                supplierId: supplierId || null,
+                // approvedById: userId, // A PO is created, *then* approved. Don't set this now.
+                supplierId: supplierId, // --- Correct relation ---
                 items: {
                     createMany: {
                         data: itemsData,
@@ -130,7 +147,7 @@ export async function POST(req: NextRequest) {
             },
             include: {
                 supplier: { select: { name: true } },
-                createdBy: { select: { name: true } },
+                approvedBy: { select: { name: true } }, // --- Correct relation ---
                 items: { include: { ingredient: { select: { name: true, unit: true } } } }
             }
         });
@@ -138,12 +155,12 @@ export async function POST(req: NextRequest) {
         // Serialize
         const serializedPO = {
             ...newPurchaseOrder,
-            totalAmount: newPurchaseOrder.totalAmount?.toString(),
+            totalCost: newPurchaseOrder.totalCost?.toString(), // --- Correct field name ---
             items: newPurchaseOrder.items.map(item => ({
                 ...item,
                 orderedQuantity: item.orderedQuantity.toString(),
                 unitCost: item.unitCost.toString(),
-                totalCost: item.totalCost.toString(),
+                totalItemCost: item.totalItemCost.toString(), // --- Correct field name ---
             }))
         };
 

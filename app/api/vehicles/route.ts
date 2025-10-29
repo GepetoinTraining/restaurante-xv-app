@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { Vehicle, Prisma } from "@prisma/client";
-import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
 /**
@@ -12,20 +11,30 @@ import { getSession } from "@/lib/auth";
  */
 export async function GET(req: NextRequest) {
     const session = await getSession();
-    if (!session.user?.isLoggedIn) { // Adjust roles if needed
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER', 'DRIVER'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Not authorized" }, { status: 401 });
     }
 
     try {
         const vehicles = await prisma.vehicle.findMany({
-            orderBy: { name: 'asc' },
+            include: {
+                staffAssignments: {
+                    include: {
+                        user: { select: { id: true, name: true, role: true } }
+                    }
+                },
+                deliveries: {
+                    select: { id: true, deliveryDate: true, status: true }
+                }
+            },
+            orderBy: { model: 'asc' },
         });
 
+        // Serialize floats (no Decimals here, but good practice for consistency)
         const serializedVehicles = vehicles.map(v => ({
             ...v,
             capacityKg: v.capacityKg?.toString(),
-            autonomyKm: v.autonomyKm?.toString(),
-            mileage: v.mileage?.toString(),
+            capacityVol: v.capacityVol?.toString(),
         }));
 
         return NextResponse.json<ApiResponse<any[]>>({ success: true, data: serializedVehicles });
@@ -41,47 +50,51 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) { // Assuming only managers/owners add vehicles
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
     try {
         const body = await req.json();
-        const { name, type, licensePlate, capacityKg, autonomyKm, mileage, notes } = body;
+        const { model, licensePlate, capacityKg, capacityVol, notes, isActive } = body;
 
-        if (!name) {
-            return NextResponse.json<ApiResponse>({ success: false, error: "Vehicle Name is required" }, { status: 400 });
+        if (!model || !licensePlate) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Model and License Plate are required" }, { status: 400 });
         }
 
-        // Helper to safely create Decimal or null
-        const toDecimalOrNull = (value: any): Decimal | null => {
-            if (value === undefined || value === null || value === '') return null;
-            try {
-                const dec = new Decimal(value);
-                if (dec.isNegative()) return null; // Or throw error?
-                return dec;
-            } catch {
-                return null; // Invalid format
+        // --- START FIX: More robust validation for optional floats ---
+        let parsedCapacityKg: number | null = null;
+        if (capacityKg !== undefined && capacityKg !== null && capacityKg !== "") {
+            parsedCapacityKg = parseFloat(capacityKg);
+            if (isNaN(parsedCapacityKg)) {
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Capacity (Kg)" }, { status: 400 });
             }
-        };
+        }
+        
+        let parsedCapacityVol: number | null = null;
+         if (capacityVol !== undefined && capacityVol !== null && capacityVol !== "") {
+            parsedCapacityVol = parseFloat(capacityVol);
+            if (isNaN(parsedCapacityVol)) {
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Capacity (Vol)" }, { status: 400 });
+            }
+        }
+        // --- END FIX ---
 
         const data: Prisma.VehicleCreateInput = {
-            name,
-            type,
+            model,
             licensePlate,
-            capacityKg: toDecimalOrNull(capacityKg),
-            autonomyKm: toDecimalOrNull(autonomyKm),
-            mileage: toDecimalOrNull(mileage),
+            capacityKg: parsedCapacityKg,
+            capacityVol: parsedCapacityVol,
             notes,
+            isActive: isActive !== undefined ? isActive : true,
         };
 
         const newVehicle = await prisma.vehicle.create({ data });
 
         const serializedVehicle = {
-             ...newVehicle,
+            ...newVehicle,
             capacityKg: newVehicle.capacityKg?.toString(),
-            autonomyKm: newVehicle.autonomyKm?.toString(),
-            mileage: newVehicle.mileage?.toString(),
+            capacityVol: newVehicle.capacityVol?.toString(),
         };
 
         return NextResponse.json<ApiResponse<any>>({ success: true, data: serializedVehicle }, { status: 201 });

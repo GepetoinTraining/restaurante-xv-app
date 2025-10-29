@@ -4,6 +4,9 @@ import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { Delivery, DeliveryStatus, Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
+// --- START FIX: Add missing import for toUTC ---
+import { toUTC } from "@/lib/utils";
+// --- END FIX ---
 
 /**
  * GET /api/deliveries
@@ -79,21 +82,26 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { deliveryDate, companyClientId, routeId, notes } = body; // Expecting date as YYYY-MM-DD
+        // --- START FIX: POST does not use routeId directly, routeStop does ---
+        const { deliveryDate, companyClientId, notes } = body; // Expecting date as YYYY-MM-DD
+        // --- END FIX ---
 
         if (!deliveryDate || !companyClientId) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Delivery Date and Company Client ID are required" }, { status: 400 });
         }
-
-        const dateObject = new Date(deliveryDate + 'T00:00:00.000Z');
+        
+        // --- START FIX: Use toUTC for date consistency ---
+        const dateObject = toUTC(new Date(deliveryDate));
+        // --- END FIX ---
 
         const data: Prisma.DeliveryCreateInput = {
             deliveryDate: dateObject,
             companyClient: { connect: { id: companyClientId } },
-            status: DeliveryStatus.PLANNED, // Initial status
+            // --- START FIX: Changed status to PENDING ---
+            status: DeliveryStatus.PENDING, // Initial status
+            // --- END FIX ---
             notes,
-            route: routeId ? { connect: { id: routeId } } : undefined,
-            // Weather can be added later via PATCH or a separate process
+            // route: routeId ? { connect: { id: routeId } } : undefined, // This link is made via RouteStop
         };
 
         const newDelivery = await prisma.delivery.create({
@@ -103,17 +111,19 @@ export async function POST(req: NextRequest) {
             }
         });
 
+        // --- START FIX: POST response serialization was incorrect ---
         const serializedDelivery = {
             ...newDelivery,
-            deliveryDate: newDelivery.deliveryDate.toISOString().split('T')[0],
+            // Re-serialize Decimals if any, (none here)
         };
+        // --- END FIX ---
 
         return NextResponse.json<ApiResponse<any>>({ success: true, data: serializedDelivery }, { status: 201 });
     } catch (error: any) {
         console.error("Error creating delivery:", error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
              if (error.code === 'P2003' || error.code === 'P2025') { // FK constraint or record not found
-                return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Company Client ID or Route ID provided" }, { status: 400 });
+                return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Company Client ID provided" }, { status: 400 });
              }
          }
         return NextResponse.json<ApiResponse>({ success: false, error: "Server error" }, { status: 500 });

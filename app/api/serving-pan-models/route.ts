@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { ServingPanModel, Prisma } from "@prisma/client";
-import { Decimal } from "@prisma/client/runtime/library";
+// --- START FIX: Removed Decimal import as schema uses Float (number) ---
+// import { Decimal } from "@prisma/client/runtime/library";
+// --- END FIX ---
 import { getSession } from "@/lib/auth";
 
 /**
@@ -21,11 +23,13 @@ export async function GET(req: NextRequest) {
             orderBy: { name: 'asc' },
         });
 
+        // --- START FIX: Serialize correct fields from schema ---
         const serializedModels = models.map(m => ({
             ...m,
-            capacityKg: m.capacityKg?.toString(),
-            tareWeightKg: m.tareWeightKg.toString(),
+            capacityL: m.capacityL?.toString(),
+            tareWeightG: m.tareWeightG?.toString(),
         }));
+        // --- END FIX ---
 
         return NextResponse.json<ApiResponse<any[]>>({ success: true, data: serializedModels });
     } catch (error) {
@@ -40,51 +44,62 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) { // Assuming only managers/owners define models
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) {
         return NextResponse.json<ApiResponse>({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
     try {
         const body = await req.json();
-        const { name, capacityKg, material, tareWeightKg, notes } = body;
+        // --- START FIX: Use correct fields from schema ---
+        const { name, capacityL, material, tareWeightG, notes, dimensions } = body;
+        // --- END FIX ---
 
-        if (!name || tareWeightKg === undefined) {
-            return NextResponse.json<ApiResponse>({ success: false, error: "Model Name and Tare Weight are required" }, { status: 400 });
+        // --- START FIX: Validate correct field ---
+        if (!name || tareWeightG === undefined) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Model Name and Tare Weight (Grams) are required" }, { status: 400 });
         }
+        // --- END FIX ---
 
-        let tareWeightDecimal: Decimal;
+        // --- START FIX: Validate as number (Float) ---
+        let tareWeightNumber: number;
         try {
-            tareWeightDecimal = new Decimal(tareWeightKg);
-            if (tareWeightDecimal.isNegative()) throw new Error();
+            tareWeightNumber = parseFloat(tareWeightG);
+            if (tareWeightNumber < 0) throw new Error();
         } catch {
-             return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Tare Weight format" }, { status: 400 });
+             return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Tare Weight (Grams) format" }, { status: 400 });
         }
-        let capacityDecimal: Decimal | null = null;
-        if (capacityKg !== undefined && capacityKg !== null) {
+        
+        let capacityNumber: number | null = null;
+        if (capacityL !== undefined && capacityL !== null) {
             try {
-                capacityDecimal = new Decimal(capacityKg);
-                if (capacityDecimal.isNegative()) throw new Error();
+                capacityNumber = parseFloat(capacityL);
+                if (capacityNumber < 0) throw new Error();
             } catch {
-                return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Capacity format" }, { status: 400 });
+                return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Capacity (Liters) format" }, { status: 400 });
             }
         }
+        // --- END FIX ---
 
-
+        // --- START FIX: Use correct fields for create input ---
         const data: Prisma.ServingPanModelCreateInput = {
             name,
-            capacityKg: capacityDecimal,
+            capacityL: capacityNumber,
             material,
-            tareWeightKg: tareWeightDecimal,
+            tareWeightG: tareWeightNumber,
+            dimensions,
             notes,
         };
+        // --- END FIX ---
 
         const newModel = await prisma.servingPanModel.create({ data });
 
+        // --- START FIX: Serialize correct fields ---
         const serializedModel = {
             ...newModel,
-            capacityKg: newModel.capacityKg?.toString(),
-            tareWeightKg: newModel.tareWeightKg.toString(),
+            capacityL: newModel.capacityL?.toString(),
+            tareWeightG: newModel.tareWeightG?.toString(),
         };
+        // --- END FIX ---
 
         return NextResponse.json<ApiResponse<any>>({ success: true, data: serializedModel }, { status: 201 });
     } catch (error: any) {

@@ -27,19 +27,35 @@ export async function POST(req: NextRequest) {
         }
 
         const targetDateStart = new Date(date + 'T00:00:00.000Z');
-        const targetDateEnd = new Date(targetDateStart.getTime() + 24 * 60 * 60 * 1000);
-
+        
         // 1. Fetch all assignments for the target date
         const assignments = await prisma.dailyMenuAssignment.findMany({
             where: {
-                assignmentDate: {
-                    gte: targetDateStart,
-                    lt: targetDateEnd
-                }
+                assignmentDate: targetDateStart // Use the exact UTC date
             },
             include: {
                 companyClient: { select: { employeeCount: true, consumptionFactor: true } },
-                menu: { include: { recipes: { include: { ingredients: true } } } } // Get recipes and their ingredients
+                // --- START FIX: Corrected nested include to get ingredients ---
+                menu: {
+                    include: {
+                        recipes: { // This is MenuRecipeItem[]
+                            include: {
+                                recipe: { // This is the nested Recipe
+                                    include: {
+                                        ingredients: { // This is RecipeIngredient[]
+                                            include: {
+                                                ingredient: { // This is the Ingredient
+                                                    select: { name: true, unit: true }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // --- END FIX ---
             }
         });
 
@@ -47,36 +63,37 @@ export async function POST(req: NextRequest) {
             return NextResponse.json<ApiResponse>({ success: true, message: "No menu assignments found for this date. No tasks generated." });
         }
 
-        // 2. Aggregate total required quantity for each *recipe ingredient* across all assignments
-        // This map will store: IngredientID -> { name: string, unit: string, totalRequired: Decimal }
+        // 2. Aggregate total required quantity for each *recipe ingredient*
         const requiredIngredients = new Map<string, { name: string, unit: string, totalRequired: Decimal }>();
 
         for (const assignment of assignments) {
             if (!assignment.menu || !assignment.companyClient) continue;
 
-            const effectiveHeadcount = new Decimal(assignment.companyClient.employeeCount || 0).times(assignment.companyClient.consumptionFactor);
-            if (effectiveHeadcount.isZero()) continue; // Skip if no employees or factor is zero
+            // --- START FIX: Use .toNumber() as consumptionFactor is a Float ---
+            const effectiveHeadcount = new Decimal(assignment.companyClient.employeeCount || 0)
+                .times(assignment.companyClient.consumptionFactor || 1.0);
+            // --- END FIX ---
+            if (effectiveHeadcount.isZero()) continue;
 
-            for (const recipe of assignment.menu.recipes) {
-                // TODO: Need a "servings per recipe" or similar metric to scale ingredients
-                // For now, assume recipe ingredients are per-person and scale directly
-                // THIS IS A MAJOR SIMPLIFICATION - NEEDS REFINEMENT
+            // --- START FIX: Correctly loop through nested relations ---
+            for (const menuRecipeItem of assignment.menu.recipes) {
+                if (!menuRecipeItem.recipe) continue; // Skip if recipe isn't included
+
                 const scalingFactor = effectiveHeadcount; // Simple scaling
 
-                for (const recipeIng of recipe.ingredients) {
-                    const current = requiredIngredients.get(recipeIng.ingredientId) ?? { name: '', unit: '', totalRequired: new Decimal(0) };
-                    const quantityNeeded = new Decimal(recipeIng.quantity).times(scalingFactor);
+                for (const recipeIng of menuRecipeItem.recipe.ingredients) {
+                    if (!recipeIng.ingredient) continue; // Skip if ingredient isn't included
+
+                    const { ingredientId, quantity } = recipeIng;
+                    const { name, unit } = recipeIng.ingredient; // Get details from the efficient include
+
+                    const current = requiredIngredients.get(ingredientId) ?? { name, unit, totalRequired: new Decimal(0) };
+                    const quantityNeeded = new Decimal(quantity).times(scalingFactor);
                     current.totalRequired = current.totalRequired.plus(quantityNeeded);
-                    // Store name/unit on first encounter
-                    if (!current.name) {
-                         // Need to fetch ingredient details if not included above
-                        const ingDetails = await prisma.ingredient.findUnique({ where: { id: recipeIng.ingredientId }, select: { name: true, unit: true } });
-                        current.name = ingDetails?.name ?? 'Unknown Ingredient';
-                        current.unit = ingDetails?.unit ?? 'unit';
-                    }
-                    requiredIngredients.set(recipeIng.ingredientId, current);
+                    requiredIngredients.set(ingredientId, current);
                 }
             }
+            // --- END FIX ---
         }
 
         // 3. Find PrepRecipes that produce these required *prepared* ingredients
@@ -86,34 +103,27 @@ export async function POST(req: NextRequest) {
 
             const prepRecipe = await prisma.prepRecipe.findFirst({
                 where: { outputIngredientId: ingredientId },
-                include: { outputIngredient: true } // Need outputIngredient for unit/name later
             });
 
             if (prepRecipe) {
                 // Found a prep recipe - generate a task
-                // TODO: Need a default location or allow selection? Using first storage for now.
                 const defaultLocation = await prisma.venueObject.findFirst({
                      where: { type: { in: ['STORAGE', 'WORKSTATION_STORAGE', 'SHELF', 'FREEZER'] } }
                 });
                 if (!defaultLocation) {
                     console.warn(`Skipping task generation for ${requirement.name}: No suitable default storage location found.`);
-                    continue; // Skip if no location available
+                    continue;
                 }
-
-                // TODO: Check existing PENDING tasks for the same recipe/location to potentially aggregate?
-                // For simplicity, create a new task for the full required amount.
 
                 generatedTasks.push({
                     prepRecipeId: prepRecipe.id,
                     targetQuantity: requirement.totalRequired,
-                    locationId: defaultLocation.id, // Use default location
+                    locationId: defaultLocation.id,
                     status: PrepTaskStatus.PENDING,
                     notes: `Auto-generated for ${date} based on ${requirement.totalRequired.toFixed(2)} ${requirement.unit} total needed.`,
-                    createdAt: targetDateStart // Associate with the target date
+                    createdAt: targetDateStart
                 });
             } else {
-                // This is a raw ingredient needed, no PrepTask to generate
-                // We assume raw ingredients are available via Purchase Orders / Stock Holdings
                  console.log(`Ingredient required (raw): ${requirement.name} - ${requirement.totalRequired.toFixed(2)} ${requirement.unit}`);
             }
         }
@@ -122,7 +132,7 @@ export async function POST(req: NextRequest) {
         if (generatedTasks.length > 0) {
             const result = await prisma.prepTask.createMany({
                 data: generatedTasks,
-                skipDuplicates: true // Avoid creating exact same task if run multiple times (based on unique constraints if any)
+                skipDuplicates: true // Avoid creating exact same task if run multiple times
             });
             return NextResponse.json<ApiResponse>({ success: true, message: `${result.count} PrepTasks generated or already exist for ${date}.`, data: { count: result.count } });
         } else {
