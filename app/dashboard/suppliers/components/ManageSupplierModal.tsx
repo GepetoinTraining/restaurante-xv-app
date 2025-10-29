@@ -32,15 +32,19 @@ export function ManageSupplierModal({
   const form = useForm({
     initialValues: {
       name: "",
-      contactPerson: "",
-      phone: "",
-      email: "",
+      // --- FIX: Use correct field names ---
+      contactName: "",
+      contactPhone: "",
+      contactEmail: "",
+      // ----------------------------------
       address: "",
       notes: "",
     },
     validate: {
       name: (value) => value.trim().length < 2 ? "Nome é obrigatório" : null,
-      email: (value) => !value || /^\S+@\S+\.\S+$/.test(value) ? null : "Email inválido",
+      // --- FIX: Use correct field name ---
+      contactEmail: (value) => !value || /^\S+@\S+\.\S+$/.test(value) ? null : "Email inválido",
+      // ---------------------------------
     },
   });
 
@@ -49,9 +53,11 @@ export function ManageSupplierModal({
     if (supplierToEdit && opened) {
       form.setValues({
         name: supplierToEdit.name,
-        contactPerson: supplierToEdit.contactPerson || "",
-        phone: supplierToEdit.phone || "",
-        email: supplierToEdit.email || "",
+        // --- FIX: Use correct field names ---
+        contactName: supplierToEdit.contactName || "",
+        contactPhone: supplierToEdit.contactPhone || "",
+        contactEmail: supplierToEdit.contactEmail || "",
+        // ----------------------------------
         address: supplierToEdit.address || "",
         notes: supplierToEdit.notes || "",
       });
@@ -65,9 +71,11 @@ export function ManageSupplierModal({
     // Only pass non-empty values or values suitable for the DB
     const payload: Partial<Supplier> = {
         name: values.name,
-        contactPerson: values.contactPerson || null,
-        phone: values.phone || null,
-        email: values.email || null,
+        // --- FIX: Use correct field names ---
+        contactName: values.contactName || null,
+        contactPhone: values.contactPhone || null,
+        contactEmail: values.contactEmail || null,
+        // ----------------------------------
         address: values.address || null,
         notes: values.notes || null,
     };
@@ -89,9 +97,11 @@ export function ManageSupplierModal({
       <form onSubmit={form.onSubmit(handleFormSubmit)}>
         <Stack>
           <TextInput required label="Nome do Fornecedor" {...form.getInputProps("name")} />
-          <TextInput label="Pessoa de Contato" {...form.getInputProps("contactPerson")} />
-          <TextInput label="Telefone" {...form.getInputProps("phone")} />
-          <TextInput label="Email" type="email" {...form.getInputProps("email")} />
+          {/* --- FIX: Use correct field names --- */}
+          <TextInput label="Pessoa de Contato" {...form.getInputProps("contactName")} />
+          <TextInput label="Telefone" {...form.getInputProps("contactPhone")} />
+          <TextInput label="Email" type="email" {...form.getInputProps("contactEmail")} />
+          {/* ---------------------------------- */}
           <Textarea label="Endereço" {...form.getInputProps("address")} />
           <Textarea label="Notas" placeholder="Condições de pagamento, dias de entrega..." {...form.getInputProps("notes")} />
 

@@ -8,19 +8,26 @@ import { PageHeader } from "../components/PageHeader";
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CompanyClient } from "@prisma/client"; // Use Prisma type for editing
-import { CompanyClientTable, SerializedCompanyClientWithId } from "./components/CompanyClientTable"; // Import table and serialized type
+import { CompanyClient } from "@prisma/client";
+// --- START FIX: Import the type definition from the component file where it's defined (or a shared types file) ---
+// Assuming CompanyClientTable now correctly exports or defines this type.
+// If not, this type needs to be defined centrally (e.g., in lib/types.ts)
+// For now, using the local type defined below.
+import { CompanyClientTable } from "./components/CompanyClientTable";
 import { ManageCompanyClientModal } from "./components/ManageCompanyClientModal";
+// --- END FIX ---
 
 // Create a client for react-query
 const queryClient = new QueryClient();
 
-// Type for API response data (serialized)
-type CompanyClientApiResponse = Omit<CompanyClient, 'consumptionFactor' | 'latitude' | 'longitude'> & {
+// Type for API response data (serialized) - USED BY THIS PAGE AND TABLE
+export type CompanyClientApiResponse = Omit<CompanyClient, 'consumptionFactor'> & {
     id: string; // Ensure ID is present
     consumptionFactor: string;
-    latitude: number | null;
-    longitude: number | null;
+    // --- START FIX: Removed non-existent fields ---
+    // latitude: number | null;
+    // longitude: number | null;
+    // --- END FIX ---
 };
 
 
@@ -52,17 +59,20 @@ function CompanyClientsPage() {
             const res = await fetch("/api/company-clients");
             const result: ApiResponse<CompanyClientApiResponse[]> = await res.json();
             if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar clientes B2B");
+            // API route now correctly serializes, so direct return is fine
             return result.data ?? [];
         },
     });
 
     // --- Mutations ---
+    // Combined mutation for create/update/delete
     const mutation = useMutation<any, Error, { method: 'POST' | 'PATCH' | 'DELETE', id?: string, data?: any }>({
         mutationFn: async ({ method, id, data }) => {
             const url = id ? `/api/company-clients/${id}` : "/api/company-clients";
             const response = await fetch(url, {
                 method: method,
                 headers: { 'Content-Type': 'application/json' },
+                // Only send body for POST/PATCH
                 body: method !== 'DELETE' ? JSON.stringify(data) : undefined,
             });
             const result: ApiResponse = await response.json();
@@ -79,7 +89,7 @@ function CompanyClientsPage() {
                 color: 'green',
             });
             internalQueryClient.invalidateQueries({ queryKey: ['companyClients'] });
-            handleCloseModal(); // Close modal on success
+            handleCloseModal(); // Close modal on success for create/update
         },
         onError: (error: Error) => {
             notifications.show({
@@ -102,19 +112,21 @@ function CompanyClientsPage() {
     };
 
     const handleCloseModal = () => {
-        setClientToEdit(null);
+        setClientToEdit(null); // Clear edit state
         setIsModalOpen(false);
     };
 
+     // Renamed handler to clarify it triggers the mutation
      const handleSaveClient = (formData: any) => {
         mutation.mutate({
             method: clientToEdit ? 'PATCH' : 'POST',
             id: clientToEdit?.id,
-            data: formData,
+            data: formData, // Pass validated form data
         });
     };
 
      const handleDeleteClient = (id: string) => {
+        // Simple confirm dialog
         if (confirm('Tem certeza que deseja excluir este cliente? Esta ação não pode ser desfeita.')) {
             mutation.mutate({ method: 'DELETE', id });
         }
@@ -139,7 +151,9 @@ function CompanyClientsPage() {
         </Button>
         <CompanyClientTable
           data={clients ?? []}
-          isLoading={isLoading || mutation.status === 'pending'}
+          // --- START FIX: Pass isLoading prop ---
+          isLoading={isLoading || mutation.isPending} // Show loading if fetching OR mutating
+          // --- END FIX ---
           onEdit={handleOpenEditModal}
           onDelete={handleDeleteClient}
         />
@@ -147,9 +161,11 @@ function CompanyClientsPage() {
       <ManageCompanyClientModal
         opened={isModalOpen}
         onClose={handleCloseModal}
-        onSubmit={handleSaveClient}
-        clientToEdit={clientToEdit}
-        isLoading={mutation.status === 'pending'}
+        // --- START FIX: Pass 'onSuccess' prop ---
+        onSuccess={handleSaveClient} // Pass the save handler as onSuccess
+        // --- END FIX ---
+        client={clientToEdit} // Renamed prop from clientToEdit
+        isLoading={mutation.isPending} // Pass mutation loading state
       />
     </Container>
   );

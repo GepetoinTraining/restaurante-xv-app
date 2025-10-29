@@ -41,8 +41,15 @@ function PrepManagementContent() {
         { open: openAssignModal, close: closeAssignModal },
     ] = useDisclosure(false);
 
+    // --- FIX: Destructure isError and error from all queries ---
+    
     // Query to fetch ALL prep tasks based on filter
-    const { data: tasks, isLoading, error, refetch: refetchTasks } = useQuery<SerializedPrepTask[]>({
+    const {
+        data: tasks,
+        isLoading: isLoadingTasks,
+        isError: isTasksError,
+        error: tasksError
+    } = useQuery<SerializedPrepTask[]>({
         queryKey: ['allPrepTasks', statusFilter], // Add filter to query key
         queryFn: () => {
             const params = new URLSearchParams();
@@ -57,7 +64,12 @@ function PrepManagementContent() {
     });
 
     // Query to fetch staff (for assign modal)
-     const { data: staffList, isLoading: isLoadingStaff } = useQuery<UserWithWorkstation[]>({
+     const {
+        data: staffList,
+        isLoading: isLoadingStaff,
+        isError: isStaffError,
+        error: staffError
+    } = useQuery<UserWithWorkstation[]>({
         queryKey: ['staffList'],
         queryFn: () =>
             fetch('/api/staff').then(res => res.json()).then(data => {
@@ -68,14 +80,24 @@ function PrepManagementContent() {
     });
 
      // Query to fetch prep recipes (for create modal)
-    const { data: prepRecipes, isLoading: isLoadingRecipes } = useQuery<SerializedPrepRecipe[]>({
+    const {
+        data: prepRecipes,
+        isLoading: isLoadingRecipes,
+        isError: isRecipesError,
+        error: recipesError
+    } = useQuery<SerializedPrepRecipe[]>({
         queryKey: ['prepRecipes'],
         queryFn: () => fetch('/api/prep-recipes').then(res => res.json()).then(data => data.data ?? []),
         staleTime: 5 * 60 * 1000, // Cache recipes for 5 mins
     });
 
     // Query to fetch storage locations (for create modal)
-    const { data: storageLocations, isLoading: isLoadingLocations } = useQuery<StorageLocation[]>({
+    const {
+        data: storageLocations,
+        isLoading: isLoadingLocations,
+        isError: isLocationsError,
+        error: locationsError
+    } = useQuery<StorageLocation[]>({
         queryKey: ['storageLocations'],
         queryFn: () => fetch('/api/storage-locations').then(res => res.json()).then(data => data.data ?? []),
         staleTime: 5 * 60 * 1000, // Cache locations for 5 mins
@@ -231,9 +253,10 @@ function PrepManagementContent() {
         createTaskMutation.mutate(values);
     };
 
-    const combinedIsLoading = isLoading || isLoadingStaff || isLoadingRecipes || isLoadingLocations;
-    const combinedIsError = error || isLoadingStaff || isLoadingRecipes || isLoadingLocations; // Any error prevents proper function
-    const combinedError = error || isLoadingStaff || isLoadingRecipes || isLoadingLocations;
+    // --- FIX: Correctly combine loading, error, and isError states ---
+    const combinedIsLoading = isLoadingTasks || isLoadingStaff || isLoadingRecipes || isLoadingLocations;
+    const combinedIsError = isTasksError || isStaffError || isRecipesError || isLocationsError; // This is a boolean
+    const combinedError = tasksError || staffError || recipesError || locationsError; // This is an Error or null
 
     return (
         <>
@@ -250,7 +273,8 @@ function PrepManagementContent() {
                          <Button
                             onClick={openCreateModal}
                             leftSection={<IconToolsKitchen2 size={16} />}
-                            disabled={combinedIsLoading || combinedIsError || !prepRecipes || !storageLocations || !staffList} // Ensure all data is loaded
+                            // --- FIX: Use the correct boolean 'combinedIsError' ---
+                            disabled={combinedIsLoading || combinedIsError || !prepRecipes || !storageLocations || !staffList}
                             loading={createTaskMutation.isPending}
                          >
                             Nova Tarefa Manual
@@ -262,6 +286,7 @@ function PrepManagementContent() {
             <Box style={{ position: 'relative' }}>
                 <LoadingOverlay visible={combinedIsLoading || updateTaskMutation.isPending || deleteTaskMutation.isPending} zIndex={1000} overlayProps={{ radius: "sm", blur: 1 }} />
 
+                {/* --- FIX: Use combinedIsError (boolean) and combinedError (Error) --- */}
                 {combinedIsError && !combinedIsLoading && (
                     <Alert
                         color="red"
@@ -275,7 +300,7 @@ function PrepManagementContent() {
                             queryClientInstance.invalidateQueries({ queryKey: ['storageLocations'] });
                         }}
                     >
-                        Não foi possível carregar tarefas, equipe, receitas ou locais: {(combinedError as Error)?.message}
+                        Não foi possível carregar os dados: {combinedError?.message}
                     </Alert>
                 )}
 
@@ -337,4 +362,3 @@ export default function PrepManagementPage() {
         </QueryClientProvider>
     );
 }
-

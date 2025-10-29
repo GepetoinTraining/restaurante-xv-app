@@ -176,7 +176,14 @@ export function RouteManager() {
               label="Select Date"
               placeholder="Pick date"
               value={selectedDate}
-              onChange={(date) => date && setSelectedDate(date)}
+              // --- FIX: Convert the string back to a Date object ---
+              onChange={(date) => {
+                // If date is truthy (not null) and is a string
+                if (date) {
+                  // We cast to 'any' to handle the string, then create a new Date
+                  setSelectedDate(new Date(date as any));
+                }
+              }}
               maw={300}
             />
           </Group>

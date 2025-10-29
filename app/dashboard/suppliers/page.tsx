@@ -1,149 +1,164 @@
 // PATH: app/dashboard/suppliers/page.tsx
-"use client";
+'use client';
 
 import { useState } from "react";
-import { Button, Container, Stack, Alert } from "@mantine/core";
-import { IconPlus, IconAlertCircle } from "@tabler/icons-react";
-import { PageHeader } from "../components/PageHeader";
-import { ApiResponse } from "@/lib/types";
-import { notifications } from "@mantine/notifications";
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import axios, { AxiosError } from "axios";
 import { Supplier } from "@prisma/client";
+import { PageHeader } from "../components/PageHeader";
 import { SupplierTable } from "./components/SupplierTable";
 import { ManageSupplierModal } from "./components/ManageSupplierModal";
+import { Button, Alert, LoadingOverlay, Box, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { useDisclosure } from "@mantine/hooks";
+import { IconPlus, IconExclamationCircle } from "@tabler/icons-react";
+import { modals } from "@mantine/modals";
+import { ApiResponse, ErrorResponse } from "@/lib/types"; // Assuming ErrorResponse is in lib/types
 
-// Create a client for react-query
+// Create a client
 const queryClient = new QueryClient();
 
-// Wrapper Component
-export default function SuppliersPageWrapper() {
+function SuppliersPageContent() {
+  const queryClientInstance = useQueryClient();
+  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
+  const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
+
+  // Fetch all suppliers
+  const { data: suppliers, isLoading, isError, error } = useQuery<Supplier[], AxiosError<ErrorResponse>>({
+    queryKey: ['suppliers'],
+    queryFn: () => axios.get('/api/suppliers').then(res => res.data),
+  });
+
+  // Mutation for creating/updating a supplier
+  const { mutate: saveSupplier, isPending: isSaving } = useMutation<
+    Supplier,
+    AxiosError<ErrorResponse>,
+    Partial<Supplier>
+  >({
+    mutationFn: (supplierData) => {
+      const url = supplierToEdit ? `/api/suppliers/${supplierToEdit.id}` : '/api/suppliers';
+      const method = supplierToEdit ? 'PUT' : 'POST';
+      return axios({ url, method, data: supplierData }).then(res => res.data);
+    },
+    onSuccess: (data) => {
+      notifications.show({
+        title: supplierToEdit ? 'Fornecedor Atualizado' : 'Fornecedor Criado',
+        message: `O fornecedor "${data.name}" foi salvo com sucesso.`,
+        color: 'green',
+      });
+      queryClientInstance.invalidateQueries({ queryKey: ['suppliers'] });
+      closeModal();
+      setSupplierToEdit(null);
+    },
+    onError: (error) => {
+      notifications.show({
+        title: 'Erro ao salvar',
+        message: error.response?.data?.error || 'Não foi possível salvar o fornecedor.',
+        color: 'red',
+        icon: <IconExclamationCircle />,
+      });
+    },
+  });
+
+  // Mutation for deleting a supplier
+  const { mutate: deleteSupplier, isPending: isDeleting } = useMutation<
+    ApiResponse,
+    AxiosError<ErrorResponse>,
+    string // The mutation itself still correctly expects a string (the ID)
+  >({
+    mutationFn: (id) => axios.delete(`/api/suppliers/${id}`).then(res => res.data),
+    onSuccess: () => {
+      notifications.show({
+        title: 'Fornecedor Excluído',
+        message: 'O fornecedor foi excluído com sucesso.',
+        color: 'green',
+      });
+      queryClientInstance.invalidateQueries({ queryKey: ['suppliers'] });
+    },
+    onError: (error) => {
+      notifications.show({
+        title: 'Erro ao excluir',
+        message: error.response?.data?.error || 'Não foi possível excluir o fornecedor.',
+        color: 'red',
+        icon: <IconExclamationCircle />,
+      });
+    },
+  });
+
+  // --- Handlers ---
+  const handleOpenCreateModal = () => {
+    setSupplierToEdit(null);
+    openModal();
+  };
+
+  const handleOpenEditModal = (supplier: Supplier) => {
+    setSupplierToEdit(supplier);
+    openModal();
+  };
+
+  // --- FIX: Changed parameter from 'id: string' to 'supplier: Supplier' ---
+  const handleDeleteClick = (supplier: Supplier) => {
+    modals.openConfirmModal({
+      title: 'Confirmar Exclusão',
+      children: (
+        <Text size="sm">
+          Tem certeza que deseja excluir o fornecedor "{supplier.name}"? Esta
+          ação não pode ser desfeita.
+        </Text>
+      ),
+      labels: { confirm: 'Excluir', cancel: 'Cancelar' },
+      confirmProps: { color: 'red' },
+      // --- FIX: Pass the 'supplier.id' to the mutation ---
+      onConfirm: () => deleteSupplier(supplier.id),
+    });
+  };
+
+  const handleSubmit = (data: Partial<Supplier>) => {
+    saveSupplier(data);
+  };
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <SuppliersPage />
-    </QueryClientProvider>
+    <>
+      <PageHeader
+        title="Fornecedores"
+        actionButton={
+          <Button leftSection={<IconPlus size={16} />} onClick={handleOpenCreateModal}>
+            Novo Fornecedor
+          </Button>
+        }
+      />
+      <Box pos="relative" mt="md">
+        <LoadingOverlay visible={isLoading || isDeleting} />
+        {isError && (
+          <Alert color="red" title="Erro ao carregar" icon={<IconExclamationCircle />}>
+            {error.response?.data?.error || "Não foi possível carregar os fornecedores."}
+          </Alert>
+        )}
+        {!isLoading && !isError && (
+          <SupplierTable
+            suppliers={suppliers || []}
+            onEdit={handleOpenEditModal}
+            // This prop now correctly matches the function signature
+            onDelete={handleDeleteClick}
+          />
+        )}
+      </Box>
+      <ManageSupplierModal
+        opened={modalOpened}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+        supplierToEdit={supplierToEdit}
+        isLoading={isSaving}
+      />
+    </>
   );
 }
 
-// Main Page Component
-function SuppliersPage() {
-    const internalQueryClient = useQueryClient();
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
-
-    // Fetch Suppliers
-    const {
-        data: suppliers,
-        isLoading,
-        isError,
-        error,
-        refetch
-    } = useQuery<Supplier[]>({
-        queryKey: ['suppliers'],
-        queryFn: async () => {
-            const res = await fetch("/api/suppliers");
-            const result: ApiResponse<Supplier[]> = await res.json();
-            if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar fornecedores");
-            return result.data ?? [];
-        },
-    });
-
-    // --- Mutations ---
-    const mutation = useMutation<Supplier, Error, { method: 'POST' | 'PATCH' | 'DELETE', id?: string, data?: Partial<Supplier> }>({
-        mutationFn: async ({ method, id, data }) => {
-            const url = id ? `/api/suppliers/${id}` : "/api/suppliers"; // Assumes PATCH/DELETE routes exist at /api/suppliers/[id]
-            const response = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: method !== 'DELETE' ? JSON.stringify(data) : undefined,
-            });
-            const result: ApiResponse<Supplier> = await response.json();
-            if (!response.ok || !result.success) {
-                throw new Error(result.error || `Falha ao ${method === 'POST' ? 'criar' : method === 'PATCH' ? 'atualizar' : 'excluir'} fornecedor`);
-            }
-            return result.data!;
-        },
-        onSuccess: (data, variables) => {
-            const action = variables.method === 'POST' ? 'criado' : variables.method === 'PATCH' ? 'atualizado' : 'excluído';
-            notifications.show({
-                title: 'Sucesso!',
-                message: `Fornecedor ${action} com sucesso.`,
-                color: 'green',
-            });
-            internalQueryClient.invalidateQueries({ queryKey: ['suppliers'] });
-            handleCloseModal(); // Close modal on success
-        },
-        onError: (error: Error) => {
-            notifications.show({
-                title: 'Erro',
-                message: error.message,
-                color: 'red',
-            });
-        },
-    });
-
-    // --- Handlers ---
-    const handleOpenCreateModal = () => {
-        setSupplierToEdit(null);
-        setIsModalOpen(true);
-    };
-
-    const handleOpenEditModal = (supplier: Supplier) => {
-        setSupplierToEdit(supplier);
-        setIsModalOpen(true);
-    };
-
-    const handleCloseModal = () => {
-        setSupplierToEdit(null);
-        setIsModalOpen(false);
-    };
-
-     const handleSaveSupplier = (formData: Partial<Supplier>) => {
-        mutation.mutate({
-            method: supplierToEdit ? 'PATCH' : 'POST',
-            id: supplierToEdit?.id,
-            data: formData,
-        });
-    };
-
-     const handleDeleteSupplier = (id: string) => {
-         if (confirm('Tem certeza que deseja excluir este fornecedor? Esta ação não pode ser desfeita.')) {
-             // mutation.mutate({ method: 'DELETE', id }); // Uncomment when DELETE API route is ready
-              notifications.show({title: "Info", message:"Delete API route not implemented yet.", color: "blue"});
-         }
-     };
-
-
+// Export the page wrapped in the QueryClientProvider
+export default function SuppliersPage() {
   return (
-    <Container fluid>
-      <Stack gap="lg">
-        <PageHeader title="Fornecedores" />
-         {isError && (
-            <Alert title="Erro ao Carregar Fornecedores" color="red" icon={<IconAlertCircle />}>
-                {(error as Error)?.message}
-            </Alert>
-        )}
-        <Button
-          leftSection={<IconPlus size={14} />}
-          onClick={handleOpenCreateModal}
-          w={200}
-          disabled={isLoading} // Disable while loading list
-        >
-          Novo Fornecedor
-        </Button>
-        <SupplierTable
-          data={suppliers ?? []}
-          isLoading={isLoading || mutation.status === 'pending'}
-          onEdit={handleOpenEditModal}
-          onDelete={handleDeleteSupplier}
-        />
-      </Stack>
-      <ManageSupplierModal
-        opened={isModalOpen}
-        onClose={handleCloseModal}
-        onSubmit={handleSaveSupplier}
-        supplierToEdit={supplierToEdit}
-        isLoading={mutation.status === 'pending'}
-      />
-    </Container>
+    <QueryClientProvider client={queryClient}>
+      <SuppliersPageContent />
+    </QueryClientProvider>
   );
 }

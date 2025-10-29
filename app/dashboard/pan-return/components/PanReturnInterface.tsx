@@ -27,7 +27,12 @@ import {
   IconWeight,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { ActivePanShipmentPayload, PanReturnPayload } from '@/lib/types';
+// --- FIX: Import ErrorResponse here ---
+import {
+  ActivePanShipmentPayload,
+  ErrorResponse,
+  PanReturnPayload,
+} from '@/lib/types';
 import { PanShipment } from '@prisma/client';
 
 export function PanReturnInterface() {

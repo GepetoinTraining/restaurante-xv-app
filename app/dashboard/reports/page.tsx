@@ -15,7 +15,7 @@ import "dayjs/locale/pt-br";
 import { SalesReport } from "./components/SalesReport";
 // Import the new cost report type
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
-import { CostReportResponse } from "@/app/api/reports/costs/route"; // <-- Import Cost Report type
+import { CostReportResponse } from "../../../app/api/reports/costs/route"; // <-- Import Cost Report type
 import { ApiResponse } from "@/lib/types";
 
 // Create a client

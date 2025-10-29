@@ -27,7 +27,8 @@ export function CreateFloorPlanModal({ opened, onClose, onSuccess }: Props) {
       width: 1000,
       height: 800,
     },
-    validate: zodResolver(schema),
+    // Use 'as any' to bypass the type definition mismatch
+    validate: zodResolver(schema as any),
   });
 
   const handleSubmit = async (values: typeof form.values) => {
@@ -87,7 +88,7 @@ export function CreateFloorPlanModal({ opened, onClose, onSuccess }: Props) {
           <Button variant="default" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" loading={form.isSubmitting()}>
+          <Button type="submit" loading={form.submitting}>
             Salvar
           </Button>
         </Group>

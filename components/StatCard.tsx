@@ -9,11 +9,11 @@ import {
   Users,
   Package,
 } from "lucide-react";
-import classes from "./StatCard.module.css"; // Assuming you have a CSS module
+import classes from "./StatCard.module.css";
 
 // Define the icons map
 const icons = {
-  dollars: DollarSign, // Corrected key from previous step
+  dollars: DollarSign,
   average: TrendingUp,
   visits: User,
   staff: Users,
@@ -24,7 +24,7 @@ const icons = {
 interface StatCardProps {
   title: string;
   value: string;
-  icon: keyof typeof icons; 
+  icon: keyof typeof icons; // This prop is required
 }
 
 export function StatCard({ title, value, icon }: StatCardProps) {
@@ -36,14 +36,13 @@ export function StatCard({ title, value, icon }: StatCardProps) {
         <Text size="xs" c="dimmed" className={classes.title}>
           {title}
         </Text>
-        {/* ---- START FIX: Pass stroke as a string ---- */}
-        <Icon className={classes.icon} size="1.4rem" stroke="1.5" /> 
+        {/* ---- FIX IS ALREADY PRESENT ---- */}
+        <Icon className={classes.icon} size="1.4rem" stroke="1.5" />
         {/* ---- END FIX ---- */}
       </Group>
 
       <Group align="flex-end" gap="xs" mt={25}>
         <Text className={classes.value}>{value}</Text>
-        {/* Example diff section if needed later */}
       </Group>
 
       <Text fz="xs" c="dimmed" mt={7}>

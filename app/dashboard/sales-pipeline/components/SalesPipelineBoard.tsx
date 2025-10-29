@@ -74,9 +74,12 @@ export function SalesPipelineBoard() {
     onSuccess: (updatedClient) => {
       notifications.show({
         title: 'Stage Updated',
+        // --- FIX 1: Add null check for notification message ---
         message: `${
           updatedClient.companyName
-        } moved to ${updatedClient.salesPipelineStage.toLowerCase()}`,
+        } moved to ${
+          updatedClient.salesPipelineStage?.toLowerCase() ?? 'an unknown stage'
+        }`,
         color: 'blue',
       });
       // Refetch all client data to update the board
@@ -132,7 +135,8 @@ export function SalesPipelineBoard() {
   const groupedClients =
     clients?.reduce(
       (acc, client) => {
-        const stage = client.salesPipelineStage;
+        // --- FIX 2: Default null stages to 'LEAD' ---
+        const stage = client.salesPipelineStage || 'LEAD';
         if (!acc[stage]) {
           acc[stage] = [];
         }
@@ -165,7 +169,7 @@ export function SalesPipelineBoard() {
             <SalesPipelineColumn
               key={stage.id}
               title={stage.title}
-      S       stageId={stage.id}
+              stageId={stage.id}
               clients={groupedClients[stage.id] || []}
             />
           ))}

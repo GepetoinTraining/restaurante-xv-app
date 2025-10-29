@@ -11,27 +11,58 @@ import {
   Alert,
   Text,
 } from '@mantine/core';
-import { useForm }S from '@mantine/form';
+// --- START FIX: Removed syntax error 'S' ---
+import { useForm } from '@mantine/form';
+// --- END FIX ---
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios, { AxiosError } from 'axios';
-import { IconCheck, IconExclamationCircle, IconBrain } from '@tabler/icons-react';
+import { IconBrain, IconExclamationCircle } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { CompanyClient, DailyConsumptionRecord } from '@prisma/client';
 import { DatePickerInput } from '@mantine/dates';
-import { toUTC } from '@/lib/utils'; // Re-using our trusted helper
+import { toUTC } from '@/lib/utils';
+// --- START FIX: Import standard ApiResponse type ---
+import { ApiResponse } from '@/lib/types';
+// --- END FIX ---
 
 type ClientList = Pick<CompanyClient, 'id' | 'companyName'>;
+
+// --- START FIX: Define Serialized record to handle Decimal -> string ---
+type SerializedDailyConsumptionRecord = Omit<
+  DailyConsumptionRecord,
+  'temperatureC' | 'predictedConsumptionKg' | 'actualConsumptionKg'
+> & {
+  temperatureC: string | null; // Serialized Decimal?
+  predictedConsumptionKg: string; // Serialized Decimal
+  actualConsumptionKg: string | null; // Serialized Decimal?
+};
+// --- END FIX ---
+
 type ErrorResponse = {
   error: string;
 };
 
 export function PredictionTrigger() {
-  // 1. Fetch company clients for the Select input
+  // 1. Fetch company clients
   const { data: clients, isLoading: isLoadingClients } = useQuery<
     ClientList[]
   >({
     queryKey: ['companyClientsList'],
-    queryFn: () => axios.get('/api/company-clients').then((res) => res.data),
+    // --- START FIX: Handle ApiResponse wrapper and select only needed fields ---
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<CompanyClient[]>>(
+        '/api/company-clients'
+      );
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch clients');
+      }
+      // Map to the simple ClientList type
+      return res.data.data.map((client) => ({
+        id: client.id,
+        companyName: client.companyName,
+      }));
+    },
+    // --- END FIX ---
   });
 
   // 2. Form for selecting client and date
@@ -51,25 +82,34 @@ export function PredictionTrigger() {
     mutate: generatePrediction,
     isPending,
     isSuccess,
-    data: generatedRecord,
+    data: generatedRecord, // This will be of type SerializedDailyConsumptionRecord
     isError,
     error,
   } = useMutation<
-    DailyConsumptionRecord,
+    SerializedDailyConsumptionRecord, // Expect the serialized type from API
     AxiosError<ErrorResponse>,
     { companyClientId: string; recordDate: Date }
   >({
-    mutationFn: (payload) => {
-      // Ensure date is sent as a UTC timestamp for that day
+    mutationFn: async (payload) => {
       const utcDate = toUTC(payload.recordDate).toISOString();
-      return axios
-        .post('/api/consumption-prediction', {
+      // --- START FIX: Handle ApiResponse wrapper ---
+      const res = await axios.post<ApiResponse<SerializedDailyConsumptionRecord>>(
+        '/api/consumption-prediction',
+        {
           companyClientId: payload.companyClientId,
           recordDate: utcDate,
-        })
-        .then((res) => res.data);
+        }
+      );
+
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to generate prediction');
+      }
+      return res.data.data;
+      // --- END FIX ---
     },
-    onSuccess: (data)S => {
+    // --- START FIX: Removed syntax error 'S' ---
+    onSuccess: (data) => {
+    // --- END FIX ---
       notifications.show({
         title: 'Prediction Generated (V1)',
         message: `Prediction for ${
@@ -99,6 +139,18 @@ export function PredictionTrigger() {
       value: client.id,
       label: client.companyName,
     })) || [];
+
+  // --- START FIX: Parse serialized strings to numbers for display ---
+  const tempC =
+    generatedRecord?.temperatureC !== null &&
+    generatedRecord?.temperatureC !== undefined
+      ? parseFloat(generatedRecord.temperatureC)
+      : null;
+
+  const predictedKg = generatedRecord?.predictedConsumptionKg
+    ? parseFloat(generatedRecord.predictedConsumptionKg)
+    : 0;
+  // --- END FIX ---
 
   return (
     <Paper shadow="md" p="lg" withBorder>
@@ -139,13 +191,15 @@ export function PredictionTrigger() {
                 Weather:{' '}
                 <strong>
                   {generatedRecord.weatherCondition},{' '}
-                  {generatedRecord.temperatureC?.toFixed(1)}°C
+                  {/* --- FIX: Use parsed number for toFixed --- */}
+                  {tempC !== null ? `${tempC.toFixed(1)}°C` : 'N/A'}
                 </strong>
               </Text>
               <Text>
                 Predicted Consumption:{' '}
                 <strong>
-                  {String(generatedRecord.predictedConsumptionKg)} kg
+                  {/* --- FIX: Use parsed number for toFixed --- */}
+                  {predictedKg.toFixed(2)} kg
                 </strong>
               </Text>
             </Alert>

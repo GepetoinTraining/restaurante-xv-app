@@ -162,7 +162,8 @@ export function RouteCard({ route, dateQueryParam }: RouteCardProps) {
         <Group grow>
           <Select
             label="Vehicle"
-            icon={<IconSteeringWheel size={16} />}
+            // --- FIX: 'icon' prop changed to 'leftSection' ---
+            leftSection={<IconSteeringWheel size={16} />}
             placeholder="Assign vehicle"
             data={vehicleData}
             value={route.vehicleId}
@@ -173,7 +174,8 @@ export function RouteCard({ route, dateQueryParam }: RouteCardProps) {
           />
           <Select
             label="Driver"
-            icon={<IconUser size={16} />}
+            // --- FIX: 'icon' prop changed to 'leftSection' ---
+            leftSection={<IconUser size={16} />}
             placeholder="Assign driver"
             data={driverData}
             value={route.driverId}
@@ -205,7 +207,7 @@ export function RouteCard({ route, dateQueryParam }: RouteCardProps) {
               p="xs"
               withBorder
               radius="sm"
-              bg="gray.0"
+              bg="var(--mantine-color-gray-0)"
             >
               <Group justify="space-between">
                 <Group gap="sm">

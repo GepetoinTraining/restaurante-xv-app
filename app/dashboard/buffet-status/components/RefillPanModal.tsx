@@ -5,29 +5,36 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Select, NumberInput, Group, Text, Alert } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from "@mantine/notifications";
-import { ApiResponse, StorageLocation } from "@/lib/types";
-import { ServingPan } from "@prisma/client"; // Import base type
+// --- START FIX: Import SerializedservingPan ---
+import { ApiResponse, StorageLocation, SerializedservingPan } from "@/lib/types";
+// --- END FIX ---
+// --- REMOVED ServingPan import as SerializedservingPan is used ---
+// import { ServingPan } from "@prisma/client";
 
-// Type matching the pan passed from BuffetStationDisplay
-type PanToRefill = (Omit<ServingPan, 'currentQuantity' | 'capacity'> & {
-    currentQuantity: string; // Serialized
-    capacity: string | null;  // Serialized
-    ingredient: {
-        id: string;
-        name: string;
-        unit: string;
-    } | null;
-});
+// --- REMOVED local PanToRefill type definition ---
+// type PanToRefill = (Omit<ServingPan, 'currentQuantity' | 'capacity'> & {
+//     currentQuantity: string; // Serialized
+//     capacity: string | null;  // Serialized
+//     ingredient: {
+//         id: string;
+//         name: string;
+//         unit: string;
+//     } | null;
+// });
 
 interface RefillPanModalProps {
   opened: boolean;
   onClose: () => void;
-  pan: PanToRefill | null;
-  onRefillSuccess: (updatedPan: any) => void;
+  // --- START FIX: Use SerializedservingPan type for the pan prop ---
+  pan: SerializedservingPan | null;
+  // --- END FIX ---
+  locations: StorageLocation[]; // Use StorageLocation from lib/types
+  onSuccess: (updatedPan: any) => void; // Callback after successful refill
 }
 
-export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: RefillPanModalProps) {
-  const [storageLocations, setStorageLocations] = useState<{ label: string; value: string; }[]>([]);
+// --- START FIX: Update component prop type ---
+export function RefillPanModal({ opened, onClose, pan, locations, onSuccess: onRefillSuccess }: RefillPanModalProps) {
+// --- END FIX ---
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,44 +44,45 @@ export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: Refill
       sourceLocationId: '',
     },
     validate: {
-      quantityToAdd: (value) => (value ? null : 'Quantidade é obrigatória'),
+      // Keep existing validation
+      quantityToAdd: (value) => {
+        if (!value) return 'Quantidade é obrigatória';
+        const num = parseFloat(value);
+        if (isNaN(num) || num <= 0) return 'Quantidade deve ser positiva';
+        // Check against capacity if available
+        if (pan?.capacity) {
+            const current = parseFloat(pan.currentQuantity);
+            const capacity = parseFloat(pan.capacity);
+            if (!isNaN(current) && !isNaN(capacity) && (current + num > capacity)) {
+                return `Excede a capacidade (${capacity.toFixed(3)} ${pan.ingredient?.unit})`;
+            }
+        }
+        return null;
+      },
       sourceLocationId: (value) => (value ? null : 'Local de origem é obrigatório'),
     },
   });
 
-  // Fetch storage locations on mount
-  useEffect(() => {
-    async function fetchLocations() {
-      try {
-        const res = await fetch('/api/storage-locations');
-        const data: ApiResponse<StorageLocation[]> = await res.json();
-        if (data.success && data.data) {
-          const formatted = data.data.map(loc => ({
-            label: loc.name,
-            value: loc.id,
-          }));
-          setStorageLocations(formatted);
-        } else {
-          setError('Falha ao buscar locais de estoque.');
-        }
-      } catch (err) {
-        setError('Erro ao conectar com a API de locais de estoque.');
-      }
-    }
-    fetchLocations();
-  }, []);
+  // --- START FIX: Adjust data fetching for locations if needed, ensure labels/values are correct ---
+  // Assuming locations prop is already formatted correctly [{ label: string, value: string }]
+  const storageLocationsOptions = locations.map(loc => ({ label: loc.name, value: loc.id }));
+  // --- END FIX ---
 
   const handleSubmit = async (values: typeof form.values) => {
-    if (!pan) return;
+    if (!pan || !pan.ingredient) {
+        setError("Informação da cuba ou ingrediente ausente.");
+        return;
+    }; // Ensure pan and ingredient exist
     setIsLoading(true);
     setError(null);
 
     try {
+      // API endpoint expects pan *ID* in the URL
       const res = await fetch(`/api/buffet/${pan.id}/refill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          quantityToAdd: values.quantityToAdd,
+          quantityToAdd: values.quantityToAdd, // API expects string or number
           sourceLocationId: values.sourceLocationId,
         }),
       });
@@ -90,10 +98,12 @@ export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: Refill
         onRefillSuccess(data.data); // Pass updated pan back
         handleClose();
       } else {
+        // --- START FIX: Display more specific error from API ---
         setError(data.error || 'Falha ao reabastecer a cuba.');
+        // --- END FIX ---
       }
-    } catch (err) {
-      setError('Erro de conexão. Tente novamente.');
+    } catch (err: any) {
+      setError(err.message || 'Erro de conexão. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
@@ -105,25 +115,31 @@ export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: Refill
     onClose();
   };
 
-  const maxRefill = pan?.capacity ? (parseFloat(pan.capacity) - parseFloat(pan.currentQuantity)) : undefined;
+  // --- START FIX: Calculations based on SerializedservingPan ---
+  const currentQuantityNum = pan ? parseFloat(pan.currentQuantity) : 0;
+  const capacityNum = pan?.capacity ? parseFloat(pan.capacity) : undefined;
+  const maxRefill = capacityNum !== undefined ? (capacityNum - currentQuantityNum) : undefined;
+  // --- END FIX ---
 
   return (
     <Modal opened={opened} onClose={handleClose} title={`Reabastecer ${pan?.ingredient?.name || 'Cuba'}`}>
       {pan && (
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Text size="sm">
-            Atual: {pan.currentQuantity} / {pan.capacity || 'N/A'} {pan.ingredient?.unit}
+            {/* --- Use calculated numbers for display --- */}
+            Atual: {currentQuantityNum.toFixed(3)} / {capacityNum !== undefined ? capacityNum.toFixed(3) : 'N/A'} {pan.ingredient?.unit}
           </Text>
-          {pan.capacity && (
-             <Text size="xs" color="dimmed">
-              (Máx. para adicionar: {maxRefill?.toFixed(3)} {pan.ingredient?.unit})
+          {capacityNum !== undefined && maxRefill !== undefined && (
+             <Text size="xs" c="dimmed">
+              (Máx. para adicionar: {maxRefill.toFixed(3)} {pan.ingredient?.unit})
             </Text>
           )}
 
           <Select
             label="Origem do Estoque"
             placeholder="Selecione o local de origem"
-            data={storageLocations}
+            // --- Use correctly formatted options ---
+            data={storageLocationsOptions}
             searchable
             required
             mt="md"
@@ -133,10 +149,9 @@ export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: Refill
           <NumberInput
             label={`Quantidade a Adicionar (${pan.ingredient?.unit})`}
             placeholder="Ex: 5.5"
-            // --- START FIX: Changed 'precision' to 'decimalScale' ---
             decimalScale={3}
-            // --- END FIX ---
-            min={0}
+            min={0.001} // Minimum positive value
+            // --- Set max based on calculation ---
             max={maxRefill}
             required
             mt="md"
@@ -149,7 +164,7 @@ export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: Refill
             </Alert>
           )}
 
-          <Group position="right" mt="xl">
+          <Group justify="flex-end" mt="xl">
             <Button variant="default" onClick={handleClose} loading={isLoading}>
               Cancelar
             </Button>

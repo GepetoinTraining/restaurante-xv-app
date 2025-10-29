@@ -125,11 +125,12 @@ function PrepTasksPageContent() {
         }
     };
 
-    const handleDeleteClick = (id: string) => {
-        console.log("Delete clicked", id);
+    // --- FIX: Changed parameter from 'id: string' to 'task: SerializedPrepTask' ---
+    const handleDeleteClick = (task: SerializedPrepTask) => {
+        console.log("Delete clicked", task.id); // Access id from the task object
          notifications.show({
             title: 'Exclusão Pendente',
-            message: 'A lógica de exclusão ainda não foi implementada.',
+            message: `A lógica de exclusão para "${task.prepRecipe.name}" ainda não foi implementada.`,
             color: 'orange',
         });
     };
@@ -165,6 +166,7 @@ function PrepTasksPageContent() {
                                             task={task}
                                             onUpdateStatus={handleStatusUpdate}
                                             onAssign={handleAssignClick}
+                                            // This prop now correctly matches the function signature
                                             onDelete={handleDeleteClick}
                                         />
                                     </Grid.Col>
@@ -184,9 +186,7 @@ function PrepTasksPageContent() {
                 opened={assignModalOpened}
                 onClose={closeAssignModal}
                 staffList={staffList || []}
-                // ---- START FIX ----
                 onAssign={handleAssignSubmit} 
-                // ---- END FIX ----
                 task={taskToAssign}
             />
 

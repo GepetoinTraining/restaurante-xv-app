@@ -9,6 +9,7 @@ import {
   LoadingOverlay,
   useMantineTheme,
   Text,
+  useMantineColorScheme,
 } from "@mantine/core";
 import {
   DndContext,
@@ -52,9 +53,11 @@ function FloorPlanCanvas({
   });
 
   const theme = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
+
   const background = imageUrl
     ? `url(${imageUrl})`
-    : theme.colorScheme === "dark"
+    : colorScheme === "dark"
     ? theme.colors.dark[7]
     : theme.colors.gray[1];
 
@@ -180,16 +183,20 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
 
     if (dragType === "PALETTE_ITEM") {
       // --- CASE 1: Dropped a NEW item from the palette ---
-      
+
       // Get canvas bounding box
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
-      
+
       // Calculate drop position relative to the canvas
-      // active.dragStart?.payload.clientX/Y is where the drag started
-      // We want the final drop position
-      const dropX = (active.dragStart?.payload.clientX ?? 0) - canvasRect.left + delta.x;
-      const dropY = (active.dragStart?.payload.clientY ?? 0) - canvasRect.top + delta.y;
+      // 'event.activatorEvent' holds the initial MouseEvent/PointerEvent
+      // We use its 'clientX/Y' as the starting point
+      const startX = (event.activatorEvent as MouseEvent).clientX ?? 0;
+      const startY = (event.activatorEvent as MouseEvent).clientY ?? 0;
+
+      // Add the delta to get the final drop position
+      const dropX = startX - canvasRect.left + delta.x;
+      const dropY = startY - canvasRect.top + delta.y;
 
       const objectType = active.data.current?.objectType as VenueObjectType;
       const label = active.data.current?.label as string;
@@ -204,7 +211,6 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
         height: objectType === "TABLE" ? 100 : 150,
       });
       openModal();
-      
     } else if (dragType === "VENUE_OBJECT") {
       // --- CASE 2: Moved an EXISTING item ---
       const objectId = active.data.current?.objectId as string;
@@ -216,16 +222,14 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
 
       // Optimistic UI update (feels faster)
       // The parent `floorPlan.objects` will update onRefresh
-      
+
       // Call API to save new position
       updateObjectPosition(objectId, newX, newY);
     }
   };
 
   // Callback for when the modal saves
-  const handleModalSuccess = (
-    newObject: FullVenueObject
-  ) => {
+  const handleModalSuccess = (newObject: FullVenueObject) => {
     closeModal();
     onRefresh(); // Refresh the whole plan to show the new/edited object
   };
@@ -246,7 +250,7 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
               imageUrl={floorPlan.imageUrl}
             >
               {/* Render all existing objects */}
-              {floorPlan.objects.map((obj) => (
+              {floorPlan.objects.map((obj) (
                 <DraggableVenueObject
                   key={obj.id}
                   object={obj}

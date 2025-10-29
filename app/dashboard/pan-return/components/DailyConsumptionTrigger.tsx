@@ -9,6 +9,7 @@ import {
   Paper,
   Select,
   Alert,
+  Text,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useMutation, useQuery } from '@tanstack/react-query';

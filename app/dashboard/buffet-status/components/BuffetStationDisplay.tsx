@@ -2,12 +2,10 @@
 'use client';
 
 import { Paper, Title, Stack, Group, Text, Progress, Badge, Button, Tooltip } from "@mantine/core";
-// ---- START FIX: Import from lib/types instead of API route ----
-import { BuffetStationWithPans, SerializedservingPan, StorageLocation } from "@/lib/types";
-// ---- END FIX ----
-import { IconToolsKitchen2, IconRefresh } from "@tabler/icons-react"; // Changed icon
+import { BuffetStationWithPans, SerializedservingPan, StorageLocation } from "@/lib/types"; // Correct import from lib/types
+import { IconToolsKitchen2, IconRefresh } from "@tabler/icons-react";
 import { useState } from "react";
-import { RefillPanModal } from "./RefillPanModal"; // Assuming modal is in the same folder
+import { RefillPanModal } from "./RefillPanModal";
 
 type BuffetStationProps = {
     station: BuffetStationWithPans;
@@ -16,6 +14,7 @@ type BuffetStationProps = {
 };
 
 export function BuffetStationDisplay({ station, storageLocations, onRefresh }: BuffetStationProps) {
+    // State uses the correct type 'SerializedservingPan'
     const [selectedPan, setSelectedPan] = useState<SerializedservingPan | null>(null);
 
     const handleRefillClick = (pan: SerializedservingPan) => {
@@ -40,14 +39,16 @@ export function BuffetStationDisplay({ station, storageLocations, onRefresh }: B
                     <Title order={3}>{station.name}</Title>
                     <IconToolsKitchen2 size={24} />
                 </Group>
-                
+
                 <Stack gap="lg" mt="md">
                     {station.pans.length === 0 && (
                         <Text c="dimmed" fs="italic">Nenhuma cuba cadastrada para esta estação.</Text>
                     )}
                     {station.pans.map((pan) => {
                         const current = parseFloat(pan.currentQuantity);
-                        const capacity = parseFloat(pan.capacity);
+                        // --- START FIX: Handle null capacity before parsing ---
+                        const capacity = pan.capacity !== null ? parseFloat(pan.capacity) : 0;
+                        // --- END FIX ---
                         const percentage = (capacity > 0) ? (current / capacity) * 100 : 0;
 
                         let progressColor = 'green';
@@ -61,12 +62,14 @@ export function BuffetStationDisplay({ station, storageLocations, onRefresh }: B
                             <div key={pan.id}>
                                 <Group justify="space-between" mb={2}>
                                     <Text fw={500}>{panName}</Text>
-                                    <Badge 
-                                        color={pan.ingredient ? 'blue' : 'gray'} 
+                                    <Badge
+                                        color={pan.ingredient ? 'blue' : 'gray'}
                                         variant="light"
                                         size="sm"
                                     >
-                                        {current.toFixed(2)} / {capacity.toFixed(2)} {unit}
+                                        {/* --- START FIX: Display capacity appropriately --- */}
+                                        {current.toFixed(2)} / {capacity > 0 ? capacity.toFixed(2) : 'N/A'} {unit}
+                                        {/* --- END FIX --- */}
                                     </Badge>
                                 </Group>
                                 <Progress value={percentage} color={progressColor} animated={percentage < 25} />
@@ -76,7 +79,7 @@ export function BuffetStationDisplay({ station, storageLocations, onRefresh }: B
                                     color="blue"
                                     mt="xs"
                                     onClick={() => handleRefillClick(pan)}
-                                    disabled={!pan.ingredient}
+                                    disabled={!pan.ingredient} // Can't refill if no ingredient assigned
                                     leftSection={<IconRefresh size={14} />}
                                 >
                                     Repor
@@ -87,13 +90,13 @@ export function BuffetStationDisplay({ station, storageLocations, onRefresh }: B
                 </Stack>
             </Stack>
 
-            {/* Refill Modal */}
+            {/* Refill Modal - Props passed here are now correctly typed */}
             <RefillPanModal
                 pan={selectedPan}
                 locations={storageLocations}
                 opened={!!selectedPan}
                 onClose={handleModalClose}
-                onSuccess={handleRefillSuccess}
+                onSuccess={handleRefillSuccess} // Renamed prop in Modal was 'onSuccess'
             />
         </Paper>
     );

@@ -26,7 +26,7 @@ type Props = {
   onSuccess: (object: VenueObject & { workstation: Workstation | null }) => void;
   floorPlanId: string;
   // Pass initial data for creation (from drop) or editing
-  initialData?: Partial<VenueObject>; 
+  initialData?: Partial<VenueObject>;
 };
 
 // Fetch workstations to link
@@ -55,13 +55,16 @@ export function CreateVenueObjectModal({
   const form = useForm({
     initialValues: {
       name: "",
-      type: VenueObjectType.OTHER,
-      workstationId: null,
+      // FIX 3: Explicitly type 'type' to allow any VenueObjectType
+      type: VenueObjectType.OTHER as VenueObjectType,
+      // FIX 1: Explicitly type workstationId to allow string or null
+      workstationId: null as string | null,
       width: 100,
       height: 100,
       rotation: 0,
     },
-    validate: zodResolver(schema),
+    // FIX 2: Use 'as any' to bypass the Zod/Mantine type incompatibility
+    validate: zodResolver(schema as any),
   });
 
   // When modal opens or initialData changes, populate the form
@@ -69,6 +72,7 @@ export function CreateVenueObjectModal({
     if (initialData) {
       form.setValues({
         name: initialData.name || "",
+        // This line now works
         type: initialData.type || VenueObjectType.TABLE,
         workstationId: initialData.workstationId || null,
         width: initialData.width || 100,
@@ -78,16 +82,17 @@ export function CreateVenueObjectModal({
     } else {
       form.reset();
     }
-  }, [initialData, opened]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, opened]); // form dependency removed to prevent loop
 
   const handleSubmit = async (values: typeof form.values) => {
     setIsSubmitting(true);
     const isEditing = !!initialData?.id;
-    
+
     const url = isEditing
       ? `/api/venue-objects/${initialData.id}`
       : "/api/venue-objects";
-      
+
     const method = isEditing ? "PUT" : "POST";
 
     const payload = {
@@ -161,7 +166,7 @@ export function CreateVenueObjectModal({
           <NumberInput label="Altura (px)" min={10} {...form.getInputProps("height")} />
         </Group>
         <NumberInput label="Rotação (deg)" min={0} max={359} {...form.getInputProps("rotation")} />
-        
+
         <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={onClose}>
             Cancelar
