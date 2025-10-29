@@ -41,21 +41,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
         const validation = supplierUpdateSchema.safeParse(body);
 
         if (!validation.success) {
-            // --- FIX: Serialize errors into 'error' string ---
             const errorDetails = validation.error.issues
                 .map(issue => `${issue.path.join('.')}: ${issue.message}`)
                 .join(', ');
             return NextResponse.json<ApiResponse>({ success: false, error: `Dados inválidos: ${errorDetails}` }, { status: 400 });
-            // -------------------------------------------------
         }
 
-        const dataToUpdate = Object.entries(validation.data).reduce((acc, [key, value]) => {
-            if (value !== undefined) {
-                acc[key as keyof Prisma.SupplierUpdateInput] = value;
-            }
-            return acc;
-        }, {} as Prisma.SupplierUpdateInput);
-
+        // --- FIX: Remove the unsafe 'reduce' function ---
+        // The validation.data object is already in the correct shape
+        // and Prisma's update method ignores 'undefined' fields.
+        const dataToUpdate = validation.data;
+        // ------------------------------------------------
 
         if (Object.keys(dataToUpdate).length === 0) {
              return NextResponse.json<ApiResponse>({ success: false, error: "Nenhum dado fornecido para atualização." }, { status: 400 });
@@ -64,7 +60,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
         const updatedSupplier = await prisma.supplier.update({
             where: { id },
-            data: dataToUpdate,
+            data: dataToUpdate, // Pass the Zod output directly
         });
 
         return NextResponse.json<ApiResponse<any>>({ success: true, data: updatedSupplier });
