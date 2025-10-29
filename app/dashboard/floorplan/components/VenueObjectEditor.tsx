@@ -1,4 +1,4 @@
-// PATH: app/dashboard/floorplan/components/VenueObjectEditor.tsx
+// File: app/dashboard/floorplan/components/VenueObjectEditor.tsx
 "use client";
 
 import { useState, useRef } from "react";
@@ -115,7 +115,9 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/venue-objects/${id}`, {
-        method: "PUT",
+        // --- MISSION FIX: Changed 'PUT' to 'PATCH' ---
+        method: "PATCH",
+        // ---------------------------------------------
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ anchorX: newX, anchorY: newY }),
       });
@@ -270,7 +272,8 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
               imageUrl={floorPlan.imageUrl}
             >
               {/* Render all existing objects */}
-              {floorPlan.objects.map((obj) => (
+              {/* --- FIX: Added type 'FullVenueObject' to 'obj' --- */}
+              {floorPlan.objects.map((obj: FullVenueObject) => (
                 <DraggableVenueObject
                   key={obj.id}
                   object={obj}
@@ -296,8 +299,9 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
         {activeDragItem?.data.current?.type === "VENUE_OBJECT" && (
           <Paper p="xs" shadow="xl" bg="green.1" style={{ opacity: 0.8 }}>
             <Text size="sm">
+              {/* --- FIX: Added type 'FullVenueObject' to 'o' --- */}
               {floorPlan.objects.find(
-                (o) => o.id === activeDragItem.data.current?.objectId
+                (o: FullVenueObject) => o.id === activeDragItem.data.current?.objectId
               )?.name || "Objeto"}
             </Text>
           </Paper>

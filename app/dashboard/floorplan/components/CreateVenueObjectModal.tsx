@@ -1,4 +1,4 @@
-// PATH: app/dashboard/floorplan/components/CreateVenueObjectModal.tsx
+// File: app/dashboard/floorplan/components/CreateVenueObjectModal.tsx
 "use client";
 
 import { Modal, Button, TextInput, Select, Group, NumberInput } from "@mantine/core";
@@ -93,7 +93,9 @@ export function CreateVenueObjectModal({
       ? `/api/venue-objects/${initialData.id}`
       : "/api/venue-objects";
 
-    const method = isEditing ? "PUT" : "POST";
+    // --- MISSION FIX: Changed 'PUT' to 'PATCH' ---
+    const method = isEditing ? "PATCH" : "POST";
+    // ---------------------------------------------
 
     const payload = {
       ...initialData,
@@ -144,10 +146,12 @@ export function CreateVenueObjectModal({
         <Select
           withAsterisk
           label="Tipo de Objeto"
+          // --- FIX: Cast 'type' to string ---
           data={Object.values(VenueObjectType).map((type) => ({
-            label: type,
-            value: type,
+            label: type as string,
+            value: type as string,
           }))}
+          // -----------------------------------
           {...form.getInputProps("type")}
         />
         <Select

@@ -1,4 +1,4 @@
-// PATH: app/api/floorplans/[id]/route.ts
+// File: app/api/floorplans/[id]/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleApiError } from "@/lib/utils";
@@ -44,8 +44,8 @@ export async function GET(request: Request, { params }: Params) {
 
     return NextResponse.json({ success: true, data: floorPlan });
   } catch (error) {
-    // --- START FIX: Add error message string ---
     return handleApiError(error, "Failed to fetch floor plan");
-    // --- END FIX ---
   }
 }
+
+// NOTE: Add PUT/PATCH/DELETE for the floorplan itself if needed later

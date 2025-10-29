@@ -1,4 +1,4 @@
-// PATH: app/api/floorplans/route.ts
+// File: app/api/floorplans/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -22,9 +22,7 @@ export async function GET() {
     });
     return NextResponse.json({ success: true, data: floorPlans });
   } catch (error) {
-    // --- START FIX: Add error message string ---
     return handleApiError(error, "Failed to fetch floor plans");
-    // --- END FIX ---
   }
 }
 
@@ -47,8 +45,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: newFloorPlan }, { status: 201 });
   } catch (error) {
-    // --- START FIX: Add error message string ---
     return handleApiError(error, "Failed to create floor plan");
-    // --- END FIX ---
   }
 }

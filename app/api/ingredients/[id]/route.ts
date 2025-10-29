@@ -1,4 +1,4 @@
-// PATH: app/api/ingredients/[id]/route.ts
+// File: app/api/ingredients/[id]/route.ts
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
@@ -17,7 +17,7 @@ type RouteParams = {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     // TODO: Define appropriate roles
-    if (!session.user?.isLoggedIn) {
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER', 'COOK'].includes(session.user.role)) { // Allow COOK to edit?
         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
     const id = params.id;
@@ -112,10 +112,63 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             }
         }
         return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro interno do servidor ao atualizar ingrediente." },
+            { success: false, error: `Erro interno do servidor ao atualizar ingrediente: ${error.message}` },
             { status: 500 }
         );
     }
 }
 
 // GET /api/ingredients/[id] could be added if needed to fetch a single definition
+
+
+// **** ADDED DELETE HANDLER ****
+/**
+ * DELETE /api/ingredients/[id]
+ * Deletes an ingredient definition by ID.
+ * (Note: This uses the logic previously in the main ingredients route)
+ */
+export async function DELETE(req: NextRequest, { params }: RouteParams) {
+    const session = await getSession();
+    // Restrict deletion, e.g., only Manager/Owner
+    if (!session.user?.isLoggedIn || !['MANAGER', 'OWNER'].includes(session.user.role)) {
+         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
+    }
+    const id = params.id;
+
+    if (!id) {
+        return NextResponse.json<ApiResponse>({ success: false, error: "ID do ingrediente é obrigatório" }, { status: 400 });
+    }
+
+    try {
+        // **Important Checks:** Prevent deletion if used
+        const stockCount = await prisma.stockHolding.count({ where: { ingredientId: id } });
+        const recipeCount = await prisma.recipeIngredient.count({ where: { ingredientId: id } });
+        const prepInputCount = await prisma.prepRecipeInput.count({ where: { ingredientId: id }});
+        const prepOutputCount = await prisma.prepRecipe.count({ where: { outputIngredientId: id }});
+
+        if (stockCount > 0) return NextResponse.json<ApiResponse>({ success: false, error: "Existem lotes de estoque associados." }, { status: 409 });
+        if (recipeCount > 0) return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente é usado em receitas de produtos." }, { status: 409 });
+        if (prepInputCount > 0) return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente é usado como entrada em receitas de preparo." }, { status: 409 });
+        if (prepOutputCount > 0) return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente é o resultado de uma receita de preparo." }, { status: 409 });
+
+        const deletedIngredient = await prisma.ingredient.delete({
+            where: { id: id },
+        });
+
+        return NextResponse.json<ApiResponse<{ id: string }>>(
+            { success: true, data: { id: deletedIngredient.id } },
+            { status: 200 }
+        );
+
+    } catch (error: any) {
+        console.error(`Error deleting ingredient ${id}:`, error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente não encontrado." }, { status: 404 });
+        }
+        return NextResponse.json<ApiResponse>(
+            { success: false, error: `Erro interno do servidor: ${error.message}` },
+            { status: 500 }
+        );
+    }
+}
+// **** END ADDED DELETE HANDLER ****
