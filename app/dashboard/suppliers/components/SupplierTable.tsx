@@ -1,7 +1,8 @@
 // PATH: app/dashboard/suppliers/components/SupplierTable.tsx
 "use client";
 
-import { Table, Button, Group, ActionIcon, Text } from "@mantine/core";
+// --- FIX: Removed unused 'Button' import ---
+import { Table, Group, ActionIcon, Text } from "@mantine/core";
 import { Supplier } from "@prisma/client";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
 
@@ -23,11 +24,9 @@ export function SupplierTable({
   const rows = suppliers.map((supplier) => (
     <Table.Tr key={supplier.id}>
       <Table.Td>{supplier.name}</Table.Td>
-      {/* --- FIX: Use correct field names --- */}
       <Table.Td>{supplier.contactName || "N/A"}</Table.Td>
       <Table.Td>{supplier.contactPhone || "N/A"}</Table.Td>
       <Table.Td>{supplier.contactEmail || "N/A"}</Table.Td>
-      {/* ---------------------------------- */}
       <Table.Td>
         <Group gap="xs">
           <ActionIcon
@@ -55,16 +54,14 @@ export function SupplierTable({
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Nome</Table.Th>
-            {/* --- FIX: Updated header to match data --- */}
             <Table.Th>Pessoa de Contato</Table.Th>
             <Table.Th>Telefone</Table.Th>
             <Table.Th>Email</Table.Th>
-            {/* --------------------------------------- */}
             <Table.Th>Ações</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>{rows}</Table.Tbody>
+        </Table>
       </Table.ScrollContainer>
     );
   }
-}
