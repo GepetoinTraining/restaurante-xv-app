@@ -1,542 +1,583 @@
-// PATH: prisma/seed.ts
+// File: prisma/seed.ts
 import {
+  Prisma,
   PrismaClient,
   Role,
-  WorkstationType,
   VenueObjectType,
+  WorkstationType,
   ProductType,
-  PrepTaskStatus,
-  DeliveryStatus,
-  RouteStatus,
   PanStatus,
   POStatus,
-} from "@prisma/client";
-import * as bcrypt from "bcryptjs";
+  PrepTaskStatus,
+} from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// Helper function to get a date in the future
-const getFutureDate = (days: number): Date => {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  date.setHours(0, 0, 0, 0); // Set to midnight
-  return date;
-};
+const SALT_ROUNDS = 10;
+
+// Helper to wrap Prisma calls in a try-catch to ignore "table does not exist" errors
+// We need this because the migration state might be behind the seed script's client
+async function tryDeleteMany(model: any) {
+  try {
+    await model.deleteMany();
+  } catch (error: any) {
+    if (error.code === 'P2021' || error.code === 'P2025') {
+      // P2021: Table does not exist
+      // P2025: Record does not exist (for cascading deletes)
+      console.log(`Skipping cleanup for model (table might not exist): ${error.meta?.modelName || 'Unknown'}`);
+    } else {
+      // Re-throw other errors
+      throw error;
+    }
+  }
+}
 
 async function main() {
-  console.log("Start seeding ...");
+  console.log('Start seeding ...');
 
   // 1. --- Clear old data in reverse dependency order ---
-  console.log("Cleaning database...");
-  await prisma.routeStop.deleteMany();
-  await prisma.panShipment.deleteMany();
-  await prisma.delivery.deleteMany();
-  await prisma.route.deleteMany();
-  await prisma.dailyMenuAssignment.deleteMany();
-  await prisma.menuRecipeItem.deleteMany();
-  await prisma.menu.deleteMany();
-  await prisma.purchaseOrderItem.deleteMany();
-  await prisma.purchaseOrder.deleteMany();
-  await prisma.stockHolding.deleteMany();
-  await prisma.prepTask.deleteMany();
-  await prisma.prepRecipeInput.deleteMany();
-  await prisma.prepRecipe.deleteMany();
-  await prisma.recipeIngredient.deleteMany();
-  await prisma.recipe.deleteMany();
-  await prisma.product.deleteMany();
-  // --- START FIX: Add missing models to delete ---
-  await prisma.buffetStation.deleteMany();
+  console.log('Cleaning database...');
+  // --- FIX: Wrap all deletes in tryDeleteMany ---
+  await tryDeleteMany(prisma.routeStop);
+  await tryDeleteMany(prisma.panShipment); // This one is duplicated below, but that's fine
+  await tryDeleteMany(prisma.delivery);
+  await tryDeleteMany(prisma.dailyMenuAssignment);
+  await tryDeleteMany(prisma.dailyConsumptionRecord);
+  await tryDeleteMany(prisma.menuRecipeItem);
+  await tryDeleteMany(prisma.menu);
+  await tryDeleteMany(prisma.wasteRecord);
+  await tryDeleteMany(prisma.panShipment);
+  await tryDeleteMany(prisma.route);
+  await tryDeleteMany(prisma.vehicle);
+  await tryDeleteMany(prisma.staffAssignment);
+  await tryDeleteMany(prisma.companyClient);
+  await tryDeleteMany(prisma.purchaseOrderItem);
+  await tryDeleteMany(prisma.purchaseOrder);
+  await tryDeleteMany(prisma.supplier);
+  await tryDeleteMany(prisma.stockHolding);
+  await tryDeleteMany(prisma.prepTask);
+  await tryDeleteMany(prisma.prepRecipeInput);
+  await tryDeleteMany(prisma.prepRecipe);
+  await tryDeleteMany(prisma.recipeStep);
+  await tryDeleteMany(prisma.recipeIngredient);
+  await tryDeleteMany(prisma.recipe);
+  await tryDeleteMany(prisma.product);
+  await tryDeleteMany(prisma.ingredient);
+  await tryDeleteMany(prisma.servingPan);
+  await tryDeleteMany(prisma.servingPanModel);
+  await tryDeleteMany(prisma.buffetStation);
+  await tryDeleteMany(prisma.clientPlate); // Added ClientPlate
+  await tryDeleteMany(prisma.orderItem);
+  await tryDeleteMany(prisma.staffOrderAssignment);
+  await tryDeleteMany(prisma.order);
+  await tryDeleteMany(prisma.serverCall);
+  await tryDeleteMany(prisma.visit);
+  await tryDeleteMany(prisma.tab);
+  await tryDeleteMany(prisma.walletTransaction);
+  await tryDeleteMany(prisma.clientWallet);
+  await tryDeleteMany(prisma.client);
+  await tryDeleteMany(prisma.venueObject);
+  await tryDeleteMany(prisma.workstation);
+  await tryDeleteMany(prisma.floorPlan);
+  await tryDeleteMany(prisma.user);
   // --- END FIX ---
-  await prisma.venueObject.deleteMany();
-  await prisma.floorPlan.deleteMany();
-  await prisma.workstation.deleteMany();
-  await prisma.supplier.deleteMany();
-  await prisma.ingredient.deleteMany();
-  await prisma.companyClient.deleteMany();
-  await prisma.servingPan.deleteMany();
-  await prisma.servingPanModel.deleteMany();
-  await prisma.vehicle.deleteMany();
-  await prisma.user.deleteMany();
 
-  // 2. --- Core Setup (Users, Workstations, Locations, Vehicles) ---
-  console.log("Seeding core setup...");
-
-  // --- START FIX: Changed PIN to 6 digits ---
-  const hashedPin = await bcrypt.hash("123456", 10);
-  // --- END FIX ---
-
+  // 2. --- Seed Users ---
+  console.log('Seeding users...');
+  const hashedPin = await bcrypt.hash('1234', SALT_ROUNDS);
   const owner = await prisma.user.create({
     data: {
-      name: "Ana Proprietária",
-      email: "owner@restaurante.com",
+      name: 'Owner User',
+      email: 'owner@example.com',
       pin: hashedPin,
       role: Role.OWNER,
     },
   });
-
+  const manager = await prisma.user.create({
+    data: {
+      name: 'Manager User',
+      email: 'manager@example.com',
+      pin: hashedPin,
+      role: Role.MANAGER,
+    },
+  });
   const cook = await prisma.user.create({
     data: {
-      name: "Carlos Cozinheiro",
-      email: "cook@restaurante.com",
+      name: 'Cook User',
+      email: 'cook@example.com',
       pin: hashedPin,
       role: Role.COOK,
     },
   });
-
+  const server = await prisma.user.create({
+    data: {
+      name: 'Server User',
+      email: 'server@example.com',
+      pin: hashedPin,
+      role: Role.SERVER,
+    },
+  });
   const driver = await prisma.user.create({
     data: {
-      name: "Daniel Diretor", // Note: Role is DRIVER, name is "Diretor"
-      email: "driver@restaurante.com",
+      name: 'Driver User',
+      email: 'driver@example.com',
       pin: hashedPin,
       role: Role.DRIVER,
     },
   });
-
-  const salesperson = await prisma.user.create({
+  const sales = await prisma.user.create({
     data: {
-      name: "Vera Vendedora",
-      email: "sales@restaurante.com",
+      name: 'Sales User',
+      email: 'sales@example.com',
       pin: hashedPin,
       role: Role.SALES,
     },
   });
-
-  const supplierHortifruti = await prisma.supplier.create({
-    data: { name: "Hortifruti Zé" },
-  });
-  const supplierCarnes = await prisma.supplier.create({
-    data: { name: "Carnes do Sul" },
-  });
-
-  const wsPreparoQuente = await prisma.workstation.create({
-    data: { name: "Preparo Quente", type: WorkstationType.PREP_STATION },
-  });
-  const wsPreparoFrio = await prisma.workstation.create({
-    data: { name: "Preparo Frio (Saladas)", type: WorkstationType.PREP_STATION },
-  });
-  const wsEmbalagem = await prisma.workstation.create({
-    data: { name: "Embalagem", type: WorkstationType.PACKING_STATION },
-  });
-
-  const fiorino = await prisma.vehicle.create({
-    data: { model: "Fiat Fiorino", licensePlate: "ABC-1234" },
-  });
-  const moto = await prisma.vehicle.create({
-    data: { model: "Honda CG 160", licensePlate: "XYZ-9876" },
-  });
-
-  const panModelGN1_1 = await prisma.servingPanModel.create({
-    data: { name: "GN 1/1 (100mm)", tareWeightG: 1500, capacityL: 13.5 },
-  });
-  const panModelGN1_2 = await prisma.servingPanModel.create({
-    data: { name: "GN 1/2 (100mm)", tareWeightG: 900, capacityL: 6.5 },
-  });
-
-  // --- START: Seed Buffet Stations ---
-  console.log("Seeding buffet stations...");
-  const stationQuentes = await prisma.buffetStation.create({
-      data: { name: "Quentes", displayOrder: 1 }
-  });
-  const stationSaladas = await prisma.buffetStation.create({
-      data: { name: "Saladas", displayOrder: 2 }
-  });
-  const stationSobremesas = await prisma.buffetStation.create({
-      data: { name: "Sobremesas", displayOrder: 3 }
-  });
-  // --- END: Seed Buffet Stations ---
-
-
-  // Create a pool of pans and assign them to stations
-  console.log("Seeding serving pans...");
-  for (let i = 1; i <= 5; i++) {
-    await prisma.servingPan.create({
-      data: {
-        panModelId: panModelGN1_1.id,
-        uniqueIdentifier: `GN11-${i.toString().padStart(3, "0")}`,
-        status: PanStatus.AVAILABLE,
-        buffetStationId: stationQuentes.id, // Assign to 'Quentes'
-      },
-    });
-  }
-    for (let i = 6; i <= 10; i++) {
-    await prisma.servingPan.create({
-      data: {
-        panModelId: panModelGN1_1.id,
-        uniqueIdentifier: `GN11-${i.toString().padStart(3, "0")}`,
-        status: PanStatus.AVAILABLE,
-        // Leave some unassigned
-      },
-    });
-  }
-  for (let i = 1; i <= 8; i++) {
-    await prisma.servingPan.create({
-      data: {
-        panModelId: panModelGN1_2.id,
-        uniqueIdentifier: `GN12-${i.toString().padStart(3, "0")}`,
-        status: PanStatus.AVAILABLE,
-        buffetStationId: stationSaladas.id, // Assign to 'Saladas'
-      },
-    });
-  }
-  for (let i = 9; i <= 15; i++) {
-    await prisma.servingPan.create({
-      data: {
-        panModelId: panModelGN1_2.id,
-        uniqueIdentifier: `GN12-${i.toString().padStart(3, "0")}`,
-        status: PanStatus.AVAILABLE,
-        buffetStationId: stationSobremesas.id, // Assign to 'Sobremesas'
-      },
-    });
-  }
-
-  // 3. --- Floor Plan & Venue Objects (Storage) ---
-  console.log("Seeding floor plan and storage...");
-
-  const floorPlanCozinha = await prisma.floorPlan.create({
-    data: { name: "Cozinha Principal", width: 2000, height: 1500 },
-  });
-
-  const voEstoqueSeco = await prisma.venueObject.create({
+  const financial = await prisma.user.create({
     data: {
-      name: "Estoque Seco",
-      type: VenueObjectType.STORAGE,
-      floorPlanId: floorPlanCozinha.id,
-      anchorX: 50,
-      anchorY: 50,
-      width: 200,
-      height: 150,
+      name: 'Financial User',
+      email: 'financial@example.com',
+      pin: hashedPin,
+      role: Role.FINANCIAL,
+    },
+  });
+  const cashier = await prisma.user.create({
+    data: {
+      name: 'Cashier User',
+      email: 'cashier@example.com',
+      pin: hashedPin,
+      role: Role.CASHIER,
     },
   });
 
-  const voFreezer = await prisma.venueObject.create({
+
+  // 3. --- Seed Workstations & Floorplan ---
+  console.log('Seeding floorplan and workstations...');
+  const mainKitchen = await prisma.floorPlan.create({
     data: {
-      name: "Freezer Principal",
+      name: 'Cozinha Principal',
+      width: 1000,
+      height: 800,
+    },
+  });
+
+  const prepStation = await prisma.workstation.create({
+    data: {
+      name: 'Estação de Preparo',
+      type: WorkstationType.PREP_STATION,
+    },
+  });
+  const packingStation = await prisma.workstation.create({
+    data: {
+      name: 'Estação de Embalagem',
+      type: WorkstationType.PACKING_STATION,
+    },
+  });
+  const kds = await prisma.workstation.create({
+    data: {
+      name: 'KDS Cozinha',
+      type: WorkstationType.KDS,
+    },
+  });
+  // Legacy POS station
+  const posStation = await prisma.workstation.create({
+    data: {
+      name: 'Caixa 01',
+      type: WorkstationType.POS,
+    },
+  });
+
+
+  // 4. --- Seed Storage Locations (VenueObjects) ---
+  console.log('Seeding storage locations...');
+  const freezer = await prisma.venueObject.create({
+    data: {
+      name: 'Freezer Principal',
       type: VenueObjectType.FREEZER,
-      floorPlanId: floorPlanCozinha.id,
+      floorPlanId: mainKitchen.id,
       anchorX: 50,
-      anchorY: 250,
-      width: 150,
-      height: 150,
-    },
-  });
-  
-    const voGeladeiraSalada = await prisma.venueObject.create({
-    data: {
-      name: "Geladeira Saladas",
-      type: VenueObjectType.STORAGE, // Or a more specific type if you add one
-      floorPlanId: floorPlanCozinha.id,
-      anchorX: 250,
-      anchorY: 250,
-      width: 150,
-      height: 150,
-    },
-  });
-
-  const voBancadaQuente = await prisma.venueObject.create({
-    data: {
-      name: "Bancada Preparo Quente",
-      type: VenueObjectType.WORKSTATION,
-      floorPlanId: floorPlanCozinha.id,
-      anchorX: 300,
       anchorY: 50,
-      width: 250,
+      width: 100,
       height: 100,
-      workstationId: wsPreparoQuente.id, // Link to workstation
+      rotation: 0,
     },
   });
-
-  // 4. --- Ingredients (Raw) & Stock ---
-  console.log("Seeding raw ingredients and stock...");
-
-  const ingArroz = await prisma.ingredient.create({
-    data: { name: "Arroz Agulhinha (Cru)", unit: "g", costPerUnit: 0.015 },
-  });
-  const ingFeijao = await prisma.ingredient.create({
-    data: { name: "Feijão Preto (Cru)", unit: "g", costPerUnit: 0.02 },
-  });
-  const ingPeitoFrango = await prisma.ingredient.create({
-    data: { name: "Peito de Frango (Cru)", unit: "g", costPerUnit: 0.035 },
-  });
-  const ingAlface = await prisma.ingredient.create({
-    data: { name: "Alface Crespa", unit: "unidade", costPerUnit: 2.5 },
-  });
-  const ingTomate = await prisma.ingredient.create({
-    data: { name: "Tomate Salada", unit: "g", costPerUnit: 0.01 },
-  });
-  const ingOleoSoja = await prisma.ingredient.create({
-    data: { name: "Óleo de Soja", unit: "ml", costPerUnit: 0.012 },
-  });
-  const ingSal = await prisma.ingredient.create({
-    data: { name: "Sal Refinado", unit: "g", costPerUnit: 0.002 },
-  });
-
-  // Add stock for raw ingredients
-  await prisma.stockHolding.create({
+  const dryStorage = await prisma.venueObject.create({
     data: {
-      ingredientId: ingArroz.id,
-      venueObjectId: voEstoqueSeco.id, // Store in "Estoque Seco"
-      quantity: 50000, // 50kg
-      costAtAcquisition: 0.015,
+      name: 'Estoque Seco',
+      type: VenueObjectType.STORAGE,
+      floorPlanId: mainKitchen.id,
+      anchorX: 200,
+      anchorY: 50,
+      width: 150,
+      height: 100,
+      rotation: 0,
     },
   });
-  await prisma.stockHolding.create({
+  const prepArea = await prisma.venueObject.create({
     data: {
-      ingredientId: ingPeitoFrango.id,
-      venueObjectId: voFreezer.id, // Store in "Freezer"
-      quantity: 20000, // 20kg
-      costAtAcquisition: 0.035,
+      name: 'Bancada Preparo',
+      type: VenueObjectType.WORKSTATION,
+      floorPlanId: mainKitchen.id,
+      anchorX: 50,
+      anchorY: 200,
+      width: 200,
+      height: 80,
+      rotation: 0,
+      workstationId: prepStation.id,
     },
   });
-  await prisma.stockHolding.create({
+  const packingArea = await prisma.venueObject.create({
     data: {
-      ingredientId: ingSal.id,
-      venueObjectId: voEstoqueSeco.id,
-      quantity: 5000, // 5kg
-      costAtAcquisition: 0.002,
-    },
-  });
-    await prisma.stockHolding.create({
-    data: {
-      ingredientId: ingAlface.id,
-      venueObjectId: voGeladeiraSalada.id,
-      quantity: 20, // 20 unidades
-      costAtAcquisition: 2.5,
-    },
-  });
-    await prisma.stockHolding.create({
-    data: {
-      ingredientId: ingTomate.id,
-      venueObjectId: voGeladeiraSalada.id,
-      quantity: 5000, // 5kg
-      costAtAcquisition: 0.01,
+      name: 'Bancada Embalagem',
+      type: VenueObjectType.WORKSTATION,
+      floorPlanId: mainKitchen.id,
+      anchorX: 300,
+      anchorY: 200,
+      width: 150,
+      height: 80,
+      rotation: 0,
+      workstationId: packingStation.id,
     },
   });
 
 
-  // 5. --- Prepared Ingredients & Prep Recipes ---
-  console.log("Seeding prep recipes...");
-
-  // Output Ingredient for the prep recipe
-  const ingFrangoGrelhado = await prisma.ingredient.create({
+  // 5. --- Seed Ingredients ---
+  console.log('Seeding ingredients...');
+  const chickenBreast = await prisma.ingredient.create({
     data: {
-      name: "Frango Grelhado (Pronto)",
-      unit: "g",
-      costPerUnit: 0.06, // Cost will be updated by tasks
+      name: 'Peito de Frango',
+      unit: 'g',
+      costPerUnit: new Decimal(0.025), // R$ 25/kg
+      isPrepared: false,
+    },
+  });
+  const rice = await prisma.ingredient.create({
+    data: {
+      name: 'Arroz Agulhinha',
+      unit: 'g',
+      costPerUnit: new Decimal(0.005), // R$ 5/kg
+      isPrepared: false,
+    },
+  });
+  const blackBeans = await prisma.ingredient.create({
+    data: {
+      name: 'Feijão Preto',
+      unit: 'g',
+      costPerUnit: new Decimal(0.008), // R$ 8/kg
+      isPrepared: false,
+    },
+  });
+  const onion = await prisma.ingredient.create({
+    data: {
+      name: 'Cebola',
+      unit: 'g',
+      costPerUnit: new Decimal(0.004), // R$ 4/kg
+      isPrepared: false,
+    },
+  });
+  const garlic = await prisma.ingredient.create({
+    data: {
+      name: 'Alho',
+      unit: 'g',
+      costPerUnit: new Decimal(0.03), // R$ 30/kg
+      isPrepared: false,
+    },
+  });
+  const oliveOil = await prisma.ingredient.create({
+    data: {
+      name: 'Azeite de Oliva',
+      unit: 'ml',
+      costPerUnit: new Decimal(0.04), // R$ 40/L
+      isPrepared: false,
+    },
+  });
+
+  // Prepared Ingredients
+  const cookedRice = await prisma.ingredient.create({
+    data: {
+      name: 'Arroz Cozido',
+      unit: 'g',
+      costPerUnit: new Decimal(0), // Cost will be calculated
+      isPrepared: true,
+    },
+  });
+  const cookedBeans = await prisma.ingredient.create({
+    data: {
+      name: 'Feijão Cozido',
+      unit: 'g',
+      costPerUnit: new Decimal(0), // Cost will be calculated
+      isPrepared: true,
+    },
+  });
+  const grilledChicken = await prisma.ingredient.create({
+    data: {
+      name: 'Frango Grelhado',
+      unit: 'g',
+      costPerUnit: new Decimal(0), // Cost will be calculated
       isPrepared: true,
     },
   });
 
-  // The prep recipe itself
-  const prepFrango = await prisma.prepRecipe.create({
+
+  // 6. --- Seed Stock Holdings (Inventory) ---
+  console.log('Seeding stock holdings...');
+  await prisma.stockHolding.create({
     data: {
-      name: "Preparo: Frango Grelhado",
-      outputIngredientId: ingFrangoGrelhado.id,
-      outputQuantity: 900, // 1kg cru -> 900g grelhado (10% loss)
-      estimatedLaborTime: 20,
+      ingredientId: chickenBreast.id,
+      venueObjectId: freezer.id,
+      quantity: new Decimal(10000), // 10kg
+      costAtAcquisition: new Decimal(0.025),
+      purchaseDate: new Date(),
+    },
+  });
+  await prisma.stockHolding.create({
+    data: {
+      ingredientId: rice.id,
+      venueObjectId: dryStorage.id,
+      quantity: new Decimal(25000), // 25kg
+      costAtAcquisition: new Decimal(0.005),
+      purchaseDate: new Date(),
+    },
+  });
+  await prisma.stockHolding.create({
+    data: {
+      ingredientId: blackBeans.id,
+      venueObjectId: dryStorage.id,
+      quantity: new Decimal(15000), // 15kg
+      costAtAcquisition: new Decimal(0.008),
+      purchaseDate: new Date(),
+    },
+  });
+  await prisma.stockHolding.create({
+    data: {
+      ingredientId: onion.id,
+      venueObjectId: dryStorage.id,
+      quantity: new Decimal(5000), // 5kg
+      costAtAcquisition: new Decimal(0.004),
+      purchaseDate: new Date(),
+    },
+  });
+  await prisma.stockHolding.create({
+    data: {
+      ingredientId: garlic.id,
+      venueObjectId: dryStorage.id,
+      quantity: new Decimal(1000), // 1kg
+      costAtAcquisition: new Decimal(0.03),
+      purchaseDate: new Date(),
+    },
+  });
+
+
+  // 7. --- Seed Prep Recipes ---
+  console.log('Seeding prep recipes...');
+  const prepRice = await prisma.prepRecipe.create({
+    data: {
+      name: 'Preparo Arroz Cozido',
+      outputIngredientId: cookedRice.id,
+      outputQuantity: new Decimal(1900), // 1kg rice -> 1.9kg cooked (approx)
+      estimatedLaborTime: 30,
       inputs: {
         create: [
-          { ingredientId: ingPeitoFrango.id, quantity: 1000 },
-          { ingredientId: ingSal.id, quantity: 10 },
-          { ingredientId: ingOleoSoja.id, quantity: 20 },
+          { ingredientId: rice.id, quantity: new Decimal(1000) },
+          { ingredientId: onion.id, quantity: new Decimal(50) },
+          { ingredientId: garlic.id, quantity: new Decimal(20) },
+          { ingredientId: oliveOil.id, quantity: new Decimal(30) },
+        ],
+      },
+    },
+  });
+  const prepBeans = await prisma.prepRecipe.create({
+    data: {
+      name: 'Preparo Feijão Cozido',
+      outputIngredientId: cookedBeans.id,
+      outputQuantity: new Decimal(2000), // 1kg beans -> 2kg cooked (approx)
+      estimatedLaborTime: 60,
+      inputs: {
+        create: [
+          { ingredientId: blackBeans.id, quantity: new Decimal(1000) },
+          { ingredientId: onion.id, quantity: new Decimal(100) },
+          { ingredientId: garlic.id, quantity: new Decimal(30) },
+          { ingredientId: oliveOil.id, quantity: new Decimal(30) },
+        ],
+      },
+    },
+  });
+  const prepChicken = await prisma.prepRecipe.create({
+    data: {
+      name: 'Preparo Frango Grelhado',
+      outputIngredientId: grilledChicken.id,
+      outputQuantity: new Decimal(750), // 1kg raw -> 750g cooked (shrinkage)
+      estimatedLaborTime: 45,
+      inputs: {
+        create: [
+          { ingredientId: chickenBreast.id, quantity: new Decimal(1000) },
+          { ingredientId: oliveOil.id, quantity: new Decimal(20) },
         ],
       },
     },
   });
 
-  // A task to make this prep recipe
-  const taskFrango = await prisma.prepTask.create({
-    data: {
-      prepRecipeId: prepFrango.id,
-      targetQuantity: 9000, // Need 9kg
-      status: PrepTaskStatus.PENDING,
-      locationId: voBancadaQuente.id, // Do this at the "Bancada Quente"
-    },
-  });
 
-  // 6. --- Final Products & Recipes ---
-  console.log("Seeding final products...");
-
-  const prodRefeicaoFrango = await prisma.product.create({
+  // 8. --- Seed Products & Recipes (Final Dishes) ---
+  console.log('Seeding products and recipes...');
+  const pfCompleto = await prisma.product.create({
     data: {
-      name: "Refeição - Frango Grelhado",
-      price: 25.0,
+      name: 'PF Completo (Frango)',
+      price: new Decimal(25.0),
       type: ProductType.FOOD,
-      prepStationId: wsEmbalagem.id, // Final assembly at "Embalagem"
-    },
-  });
-
-  // The recipe for the final product (links prep recipe output)
-  const recipeRefeicaoFrango = await prisma.recipe.create({
-    data: {
-      productId: prodRefeicaoFrango.id,
-      notes: "Montagem padrão: 150g frango, 100g arroz, 100g feijão.",
-      ingredients: {
-        create: [
-          {
-            ingredientId: ingFrangoGrelhado.id, // Use the *prepared* ingredient
-            quantity: 150,
-          },
-          // Assume Arroz/Feijão are also prepared ingredients
-          // For simplicity, we'll link raw here
-          { ingredientId: ingArroz.id, quantity: 100 },
-          { ingredientId: ingFeijao.id, quantity: 100 },
-        ],
-      },
-      steps: {
-        create: [
-          { stepNumber: 1, instruction: "Pesar 150g de Frango Grelhado na GN." },
-          { stepNumber: 2, instruction: "Pesar 100g de Arroz Cozido." },
-          { stepNumber: 3, instruction: "Pesar 100g de Feijão Cozido." },
-        ],
-      },
-    },
-  });
-
-  // 7. --- B2B Clients & Menus ---
-  console.log("Seeding B2B clients and menus...");
-
-  const clientTechCorp = await prisma.companyClient.create({
-    data: {
-      companyName: "TechCorp Soluções",
-      contactName: "Fabio Gerente",
-      contactPhone: "47999991111",
-      contactEmail: "fabio@techcorp.com",
-      addressStreet: "Rua das Palmeiras",
-      addressNumber: "100",
-      addressCity: "Joinville",
-      employeeCount: 150,
-      consumptionFactor: 1.1,
-      salesPipelineStage: "Active",
-    },
-  });
-
-  const clientStartupX = await prisma.companyClient.create({
-    data: {
-      companyName: "Startup X",
-      contactName: "Maria CEO",
-      contactPhone: "47988882222",
-      contactEmail: "maria@startupx.com",
-      addressStreet: "Avenida Principal",
-      addressNumber: "5000",
-      addressCity: "Joinville",
-      employeeCount: 40,
-      salesPipelineStage: "Lead",
-    },
-  });
-
-  const menuSemana1 = await prisma.menu.create({
-    data: {
-      name: "Menu Básico - Semana 1",
-      weekNumber: 1,
-      recipes: {
+      prepStationId: packingStation.id, // Packed here
+      recipe: {
         create: {
-          recipeId: recipeRefeicaoFrango.id,
+          notes: 'Prato Feito padrão da casa',
+          ingredients: {
+            create: [
+              { ingredientId: cookedRice.id, quantity: new Decimal(200) },
+              { ingredientId: cookedBeans.id, quantity: new Decimal(150) },
+              { ingredientId: grilledChicken.id, quantity: new Decimal(120) },
+            ],
+          },
         },
       },
     },
   });
 
-  // 8. --- Workflow Simulation (Assignments, Deliveries, Routes) ---
-  console.log("Seeding workflow simulation...");
-
-  const tomorrow = getFutureDate(1);
-
-  // Assign Menu 1 to TechCorp for tomorrow
-  const assignment = await prisma.dailyMenuAssignment.create({
+  const pfVegetariano = await prisma.product.create({
     data: {
-      assignmentDate: tomorrow,
-      companyClientId: clientTechCorp.id,
-      menuId: menuSemana1.id,
+      name: 'PF Vegetariano (Omelete)',
+      price: new Decimal(22.0),
+      type: ProductType.FOOD,
+      prepStationId: kds.id, // Made on demand
+      recipe: {
+        create: {
+          notes: 'PF sem carne',
+          ingredients: {
+            create: [
+              { ingredientId: cookedRice.id, quantity: new Decimal(200) },
+              { ingredientId: cookedBeans.id, quantity: new Decimal(150) },
+              { ingredientId: onion.id, quantity: new Decimal(30) }, // Omelete ingredient
+            ],
+          },
+        },
+      },
     },
   });
 
-  // Create a delivery for this assignment
-  const delivery = await prisma.delivery.create({
+
+  // 9. --- Seed B2B Company Clients ---
+  console.log('Seeding company clients...');
+  const clientA = await prisma.companyClient.create({
     data: {
-      deliveryDate: tomorrow,
-      companyClientId: clientTechCorp.id,
-      status: DeliveryStatus.PENDING,
-      driverId: driver.id,
-      vehicleId: fiorino.id,
+      companyName: 'TechCorp Software',
+      contactName: 'Ana Silva',
+      contactPhone: '11999991234',
+      contactEmail: 'ana.silva@techcorp.com',
+      cnpj: '12.345.678/0001-01',
+      addressStreet: 'Rua das Flores',
+      addressNumber: '123',
+      addressCity: 'São Paulo',
+      addressState: 'SP',
+      addressZipCode: '01010-010',
+      employeeCount: 50,
+      consumptionFactor: 1.1,
+      salesPipelineStage: 'Active',
+    },
+  });
+  const clientB = await prisma.companyClient.create({
+    data: {
+      companyName: 'InovaLog Transportes',
+      contactName: 'Bruno Costa',
+      contactPhone: '47988884321',
+      contactEmail: 'bruno.costa@inovalog.com',
+      cnpj: '87.654.321/0001-02',
+      addressStreet: 'Avenida Brasil',
+      addressNumber: '1000',
+      addressCity: 'Joinville',
+      addressState: 'SC',
+      addressZipCode: '89200-000',
+      employeeCount: 30,
+      consumptionFactor: 1.0,
+      salesPipelineStage: 'Active',
+    },
+  });
+  const clientC = await prisma.companyClient.create({
+    data: {
+      companyName: 'Futura Contabilidade',
+      contactName: 'Carla Dias',
+      contactPhone: '21977775678',
+      contactEmail: 'carla.dias@futura.com',
+      salesPipelineStage: 'Lead',
     },
   });
 
-  // Create a route for tomorrow
-  const route = await prisma.route.create({
+  // 10. --- Seed Logistics ---
+  console.log('Seeding vehicles...');
+  const fiorino = await prisma.vehicle.create({
     data: {
-      routeDate: tomorrow,
-      routeName: "Rota Norte - " + tomorrow.toISOString().split("T")[0],
-      vehicleId: fiorino.id,
-      driverId: driver.id,
-      status: RouteStatus.PLANNED,
+      model: 'Fiat Fiorino',
+      licensePlate: 'ABC1234',
     },
   });
 
-  // Add the delivery as a stop on the route
-  const stop = await prisma.routeStop.create({
+  // 11. --- Seed Suppliers & POs ---
+  console.log('Seeding suppliers and POs...');
+  const hortifruti = await prisma.supplier.create({
     data: {
-      routeId: route.id,
-      deliveryId: delivery.id,
-      stopOrder: 1,
+      name: 'Hortifruti Bom Preço',
+      contactName: 'Sr. Manuel',
+      contactPhone: '4734345678',
+    },
+  });
+  const acougue = await prisma.supplier.create({
+    data: {
+      name: 'Açougue Carne Nobre',
+      contactName: 'Carlos',
+      contactPhone: '4734349988',
     },
   });
 
-  // 9. --- Financials (PO) ---
-  console.log("Seeding financials...");
-
-  const po = await prisma.purchaseOrder.create({
+  await prisma.purchaseOrder.create({
     data: {
-      supplierId: supplierCarnes.id,
+      supplierId: acougue.id,
       orderDate: new Date(),
-      expectedDeliveryDate: tomorrow,
-      status: POStatus.SUBMITTED,
-      notes: "Pedido urgente de frango",
+      status: POStatus.DRAFT,
       items: {
         create: {
-          ingredientId: ingPeitoFrango.id,
-          orderedQuantity: 30, // 30kg
-          orderedUnit: "kg",
-          unitCost: 35.0, // Custo por kg
-          totalItemCost: 30 * 35.0,
+          ingredientId: chickenBreast.id,
+          orderedQuantity: new Decimal(50), // 50
+          orderedUnit: 'kg', // kg
+          unitCost: new Decimal(25.0), // 25.00 / kg
+          totalItemCost: new Decimal(1250.00), // 50 * 25
         },
       },
     },
   });
 
-  // --- START: Add some buffet pan data ---
-  console.log("Seeding pan contents...");
-  
-  // Find some pans to fill
-  const pan1 = await prisma.servingPan.findFirst({ where: { buffetStationId: stationQuentes.id }});
-  const pan2 = await prisma.servingPan.findFirst({ where: { buffetStationId: stationSaladas.id }});
-
-  if (pan1) {
-    await prisma.servingPan.update({
-      where: { id: pan1.id },
+  // 12. --- Seed Legacy Client/Visit (for ClientPlate) ---
+  console.log('Seeding legacy client and visit...');
+  try {
+    const legacyClient = await prisma.client.create({
       data: {
-        ingredientId: ingFrangoGrelhado.id,
-        currentQuantity: 5000, // 5kg
-        capacity: 8000, // 8kg capacity
-        status: PanStatus.IN_USE,
-      }
+        name: 'Cliente Balcão Teste',
+        phone: '47900001111',
+      },
     });
-  }
-    
-  if (pan2) {
-    await prisma.servingPan.update({
-      where: { id: pan2.id },
+
+    const legacyVisit = await prisma.visit.create({
       data: {
-        ingredientId: ingTomate.id,
-        currentQuantity: 1500, // 1.5kg
-        capacity: 3000, // 3kg capacity
-        status: PanStatus.IN_USE,
-      }
+        clientId: legacyClient.id,
+        status: 'ACTIVE',
+      },
     });
+    console.log(`Created legacy client ${legacyClient.id} and visit ${legacyVisit.id}`);
+  } catch (error) {
+     console.error("Failed to create legacy client/visit (might not exist in schema):", error);
   }
-  // --- END: Add buffet pan data ---
 
 
-  console.log("Seeding finished.");
+  console.log('Seeding finished.');
 }
 
 main()

@@ -11,7 +11,7 @@ export default function LandingPage() {
           <Stack align="center" gap="lg">
             <Image src="/logo.jpg" alt="Acaia Logo" w={150} />
             <Title order={1} ta="center">
-              Bem-vindo ao Acaia
+              Bem vindo ao Espaço XV
             </Title>
             <Text c="dimmed" ta="center">
               Sistema de gerenciamento interno.

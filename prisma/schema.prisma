@@ -28,8 +28,11 @@ model User {
   ordersHandled        StaffOrderAssignment[] // Legacy order handling (might be removed if not used for B2B)
   prepTasksExecuted    PrepTask[]             @relation("ExecutedBy") // Tasks marked complete by this user
   prepTasksAssigned    PrepTask[]             @relation("AssignedTo") // Tasks assigned to this user
-  // Removed outdated relations causing errors:
-  // platesWeighed       ClientPlate[]          @relation("WeighedBy") // Buffet specific - Likely unused
+  
+  // --- FIX: Uncommented this relation ---
+  platesWeighed       ClientPlate[]          @relation("WeighedBy")
+  // ------------------------------------
+
   wasteRecorded          WasteRecord[]          @relation("RecordedBy") // Waste recorded by this staff member
   // transactionsApproved WalletTransaction[]    @relation("ApprovedBy") // Wallet specific - Likely unused
   callsAcknowledged      ServerCall[]           @relation("AcknowledgedCalls") // Legacy calls (might be removed)
@@ -75,13 +78,12 @@ model CompanyClient {
   addressCity       String?
   addressState      String? // UF
   addressZipCode    String? // CEP
-  deliveryNotes     String?  // Special instructions for delivery
+  deliveryNotes     String? // Special instructions for delivery
   // B2B Specific Fields
-  employeeCount     Int?     // Number of employees to serve
+  employeeCount     Int? // Number of employees to serve
   consumptionFactor Float    @default(1.0) // Multiplier for consumption (e.g., 1.2 if they eat 20% more)
   salesPipelineStage String? // e.g., "Prospect", "Lead", "Negotiation", "Active", "Lost"
   notes             String?
-
   // Relations
   dailyMenuAssignments  DailyMenuAssignment[]
   deliveries            Delivery[]
@@ -119,7 +121,6 @@ model MenuRecipeItem {
   menuId   String
   recipeId String // Points to a Product Recipe (since products are served)
   // Add details like typical serving size/pan? Or handle this during prep generation?
-
   // Relations
   menu   Menu   @relation(fields: [menuId], references: [id], onDelete: Cascade)
   recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade) // Link to Product Recipe
@@ -181,10 +182,9 @@ model VenueObject {
   reservationCost Decimal? @db.Decimal(10, 2) // Likely not relevant
   qrCodeId        String?  @unique // Could be used for storage location IDs
   notes           String?
-
   // Relations
   floorPlan     FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  workstationId String?   // Link if this object *represents* a workstation
+  workstationId String? // Link if this object *represents* a workstation
   workstation   Workstation? @relation(fields: [workstationId], references: [id], onDelete: SetNull)
   // visits        Visit[]      // Removed, less relevant for B2B internal
   stockHoldings StockHolding[] @relation("LocationStock") // Stock stored AT this location
@@ -245,13 +245,13 @@ model StaffAssignment {
   id            String   @id @default(cuid())
   assignedAt    DateTime @default(now())
   userId        String
-  venueObjectId String?  // Which VenueObject (e.g., packing station) - Optional
-  vehicleId     String?  // Which Vehicle (for DRIVER role) - Optional
+  venueObjectId String? // Which VenueObject (e.g., packing station) - Optional
+  vehicleId     String? // Which Vehicle (for DRIVER role) - Optional
 
   // Relations
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueObject VenueObject? @relation(fields: [venueObjectId], references: [id], onDelete: Cascade)
-  vehicle     Vehicle?    @relation(fields: [vehicleId], references: [id], onDelete: SetNull) // Link to Vehicle
+  vehicle     Vehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull) // Link to Vehicle
 
   // Add constraint? A user can only be assigned to one thing at a time? Or allow multiple?
   // @@unique([userId, venueObjectId]) // Removed, might be assigned to vehicle too
@@ -287,7 +287,7 @@ model Route {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  routeName String?  // Optional name, e.g., "North Route - 2023-10-27"
+  routeName String? // Optional name, e.g., "North Route - 2023-10-27"
   routeDate DateTime @db.Date
   vehicleId String?
   driverId  String? // Could be derived from vehicle assignment
@@ -297,7 +297,7 @@ model Route {
   notes     String?
 
   // Relations
-  vehicle Vehicle?    @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  vehicle Vehicle?  @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   stops   RouteStop[] @relation("RouteStops") // Order matters here
 
   @@index([routeDate])
@@ -322,7 +322,6 @@ model RouteStop {
   estimatedDeparture DateTime?
   actualDeparture    DateTime?
   notes              String?
-
   // Relations
   route    Route    @relation("RouteStops", fields: [routeId], references: [id], onDelete: Cascade)
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
@@ -375,8 +374,8 @@ model ServingPanModel {
   id          String   @id @default(cuid())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
- 
-   name        String   @unique // e.g., "GN 1/1 100mm Inox", "Travessa Cerâmica Média"
+  
+  name        String   @unique // e.g., "GN 1/1 100mm Inox", "Travessa Cerâmica Média"
   material    String?
   capacityL   Float? // Volume capacity in Liters
   tareWeightG Float? // Average tare weight in grams
@@ -395,7 +394,6 @@ model BuffetStation {
   updatedAt    DateTime @updatedAt
   name         String   @unique
   displayOrder Int?
-
   // Relations
   pans ServingPan[] // Pans belonging to this station
 
@@ -478,7 +476,6 @@ model Product {
   type          ProductType // FOOD typically for B2B
   isActive      Boolean  @default(true) // If currently offered in menus
   prepStationId String // Which Workstation prepares this?
-
   // Relations
   prepStation Workstation @relation(fields: [prepStationId], references: [id])
   orderItems  OrderItem[] // Link to legacy OrderItem
@@ -554,7 +551,6 @@ model Ingredient {
   unit             String // Base unit (e.g., 'g', 'ml', 'unidade')
   costPerUnit      Decimal  @db.Decimal(10, 4) // Cost of one base unit (can be updated by purchasing/prep)
   isPrepared       Boolean  @default(false) // Is this made internally via a PrepRecipe?
-
   // Relations
   stockHoldings      StockHolding[]
   recipeIngredients  RecipeIngredient[] // Used in product recipes
@@ -639,7 +635,6 @@ model PrepTask {
   locationId       String // Where the prep happened / output is stored
   notes            String?
   // Potential: Link to DailyMenuAssignment or Delivery that triggered this task?
-
   // Relations
   prepRecipe PrepRecipe  @relation(fields: [prepRecipeId], references: [id], onDelete: Restrict)
   assignedTo User?       @relation("AssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
@@ -675,7 +670,6 @@ model Order {
   total     Decimal  @db.Decimal(10, 2)
   status    OrderStatus @default(PENDING)
   notes     String?
-
   // Relations
   visit     Visit                  @relation(fields: [visitId], references: [id], onDelete: Cascade)
   items     OrderItem[]
@@ -755,7 +749,6 @@ model ServerCall {
   resolvedById     String?
   resolvedAt       DateTime?
   notes            String?
-
   // Relations
   venueObject    VenueObject @relation(fields: [venueObjectId], references: [id], onDelete: Cascade)
   visit          Visit       @relation(fields: [visitId], references: [id], onDelete: Cascade)
@@ -856,7 +849,6 @@ model Supplier {
   address        String?
   cnpj           String?  @unique // Tax ID for supplier
   notes          String?
-
   // Relations
   purchaseOrders PurchaseOrder[] // Orders placed with this supplier
 
@@ -877,7 +869,6 @@ model PurchaseOrder {
   notes                String?
   approvedById         String? // User who approved the order
   approvedAt           DateTime?
-
   // Relations
   supplier   Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   items      PurchaseOrderItem[]
@@ -908,7 +899,6 @@ model PurchaseOrderItem {
   unitCost           Decimal  @db.Decimal(10, 4) // Cost per orderedUnit
   totalItemCost      Decimal  @db.Decimal(10, 2) // orderedQuantity * unitCost
   notes              String?
-
   // Relations
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   ingredient    Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
@@ -918,6 +908,38 @@ model PurchaseOrderItem {
   @@index([ingredientId])
   @@map("purchase_order_items")
 }
+
+// --- NEW MODEL: CLIENT PLATE (for POS / Weigh Station) ---
+// This model is part of the legacy system but required by the new routes
+model ClientPlate {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  visitId           String
+  visit             Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  clientId          String
+  client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  weighedById       String
+  weighedBy         User     @relation("WeighedBy", fields: [weighedById], references: [id], onDelete: Restrict)
+
+  totalWeightGrams  Decimal  @db.Decimal(10, 2)
+  tareWeightGrams   Decimal  @db.Decimal(10, 2)
+  netWeightGrams    Decimal  @db.Decimal(10, 2)
+  calculatedCost    Decimal  @db.Decimal(10, 2)
+
+  imageUrl          String?
+  estimatedContents Json?    // AI guess of what's on the plate
+  notes             String?
+
+  @@index([visitId])
+  @@index([clientId])
+  @@index([weighedById])
+  @@map("client_plates")
+}
+// --- END NEW MODEL ---
 
 // Legacy Visit model - kept for reference, likely unused for B2B MVP
 model Visit {
@@ -935,6 +957,7 @@ model Visit {
   venueObject   VenueObject? @relation(fields: [venueObjectId], references: [id], onDelete: SetNull)
   orders        Order[]
   serverCalls   ServerCall[]
+  clientPlates  ClientPlate[] // Relation back to plates
 
   @@index([clientId])
   @@index([tabId])
@@ -962,6 +985,7 @@ model Client {
   visits       Visit[]
   wallet       ClientWallet?
   transactions WalletTransaction[] @relation("ClientTransactions")
+  clientPlates ClientPlate[] // Relation back to plates
 
   @@map("clients")
 }
@@ -994,7 +1018,7 @@ model WalletTransaction {
   approvedAt   DateTime?
   wallet       ClientWallet @relation("WalletTransactions", fields: [walletId], references: [id], onDelete: Cascade)
   client       Client       @relation("ClientTransactions", fields: [clientId], references: [id], onDelete: Cascade)
-  // approvedBy   User?        @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull) // Relation removed from User
+  // approvedBy   User?         @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull) // Relation removed from User
 
   @@index([clientId, createdAt])
   @@map("wallet_transactions")
@@ -1014,7 +1038,7 @@ enum TransactionStatus {
   CANCELLED
 }
 
-// Legacy Tab model - kept for reference, likely unused for B2B MVP
+// Legacy Tab model - kept for reference, likely unused for B2Block
 model Tab {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -1061,7 +1085,6 @@ model ScheduledEvent {
   notes         String?
   entertainer   Entertainer @relation(fields: [entertainerId], references: [id], onDelete: Cascade)
   djSession     DJSession?
-
   @@index([entertainerId])
   @@index([startTime, endTime])
   @@map("scheduled_events")
