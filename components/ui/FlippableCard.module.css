@@ -1,0 +1,38 @@
+/* PATH: app/components/ui/FlippableCard.module.css */
+
+/* This outer container sets up the 3D perspective */
+.scene {
+  width: 100%;
+  perspective: 1000px; /* How "deep" the 3D effect is */
+  cursor: pointer;
+}
+
+/* This is the inner container that actually flips */
+.card {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+  min-height: 150px; /* Ensure container has a size */
+}
+
+/* This is a common class for the front and back faces */
+.cardFace {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  /* This hides the "back" of the element when it's facing away */
+  backface-visibility: hidden; 
+  -webkit-backface-visibility: hidden; /* Safari prefix */
+}
+
+/* This is the front face. It needs no rotation. */
+.cardFaceFront {
+  /* Default */
+}
+
+/* This is the back face. It starts off rotated 180 degrees. */
+.cardFaceBack {
+  transform: rotateY(180deg);
+}

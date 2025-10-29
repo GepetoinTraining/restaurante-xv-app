@@ -9,6 +9,7 @@ import { Notifications } from "@mantine/notifications";
 import { ReactNode } from "react";
 import { IconSun, IconMoon, IconUserCircle } from "@tabler/icons-react"; // Added IconUserCircle
 import Link from "next/link"; // Added Link for navigation
+import { NotificationBell } from "../../components/ui/NotificationBell";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [opened, { toggle }] = useDisclosure();
@@ -49,6 +50,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 {colorScheme === 'dark' ? <IconSun stroke={1.5} /> : <IconMoon stroke={1.5} />}
               </ActionIcon>
               
+              <NotificationBell />
+
               {/* Settings Page Icon Link */}
               <Link href="/dashboard/settings" passHref>
                 <ActionIcon
