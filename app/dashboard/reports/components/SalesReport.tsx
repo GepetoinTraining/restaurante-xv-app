@@ -17,12 +17,14 @@ import {
 } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
-import { CostReportResponse } from "@/app/api/reports/costs/route"; // Import Cost Report type
+// --- FIX: Import FinancialReport from lib/types, not CostReportResponse ---
+import { FinancialReport } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
 interface SalesReportProps {
   salesData: SalesReportResponse | undefined;
-  costData: CostReportResponse | undefined; // Add cost data prop
+  // --- FIX: Use FinancialReport type ---
+  costData: FinancialReport | undefined; // Add cost data prop
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -95,10 +97,10 @@ export function SalesReport({
     </Table.Tr>
   ));
 
-  // --- Format Cost Data (if available) ---
-  const totalPrepCost = costData ? formatCurrency(parseFloat(costData.totalPrepCost)) : "N/A";
-  const totalWasteCost = costData ? formatCurrency(parseFloat(costData.totalWasteCost)) : "N/A";
-  const totalBuffetRevenue = costData ? formatCurrency(parseFloat(costData.totalBuffetRevenue)) : "N/A";
+  // --- FIX: Format Cost Data using FinancialReport type ---
+  const totalPurchaseCost = costData ? formatCurrency(costData.summary.totalPurchaseCosts) : "N/A";
+  const totalWasteCost = costData ? formatCurrency(costData.summary.totalWasteCosts) : "N/A";
+  // 'totalBuffetRevenue' and 'totalPrepCost' are not in FinancialReport, so we use what is available.
 
 
   return (
@@ -119,11 +121,12 @@ export function SalesReport({
       {/* --- Cost Stats Grid --- */}
       {costData && (
           <>
-             <Title order={3} mt="lg">Resumo de Custos & Buffet</Title>
-             <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <StatCard title="Custo de Preparo (Estimado)" value={totalPrepCost} color="orange.4"/>
-                <StatCard title="Custo de Perdas (Registrado)" value={totalWasteCost} color="red.4"/>
-                <StatCard title="Receita Buffet (Pesagem)" value={totalBuffetRevenue} color="blue.4" />
+             {/* --- FIX: Updated Title --- */}
+             <Title order={3} mt="lg">Resumo de Custos</Title>
+             {/* --- FIX: Updated SimpleGrid to show available data --- */}
+             <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <StatCard title="Custo de Compras" value={totalPurchaseCost} color="orange.4"/>
+                <StatCard title="Custo de Perdas (Total)" value={totalWasteCost} color="red.4"/>
              </SimpleGrid>
           </>
       )}

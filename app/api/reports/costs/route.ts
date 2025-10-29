@@ -1,4 +1,4 @@
-// PATH: app/api/reports/financial/route.ts
+// PATH: app/api/reports/costs/route.ts
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -10,7 +10,7 @@ import { POStatus, WasteReason } from '@prisma/client';
 
 
 /**
- * GET /api/reports/financial
+ * GET /api/reports/costs
  *
  * Generates a financial report for a given date range.
  * Query Params:
