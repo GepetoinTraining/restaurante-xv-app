@@ -1,57 +1,47 @@
 // PATH: app/api/reports/costs/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { Decimal } from "@prisma/client/runtime/library";
-// Import the FinancialReport type
-import { FinancialReport } from "@/lib/types";
 
-// Export the type alias so the page can import it
-export type CostReportResponse = FinancialReport;
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { toUTC } from '@/lib/utils';
+import { Decimal } from '@prisma/client/runtime/library';
+import { POStatus, WasteReason } from '@prisma/client';
 
-export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (session?.user?.role !== "OWNER" && session?.user?.role !== "MANAGER") {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  const { searchParams } = new URL(req.url);
-  const from = searchParams.get("from");
-  const to = searchParams.get("to");
-
-  if (!from || !to) {
-    return NextResponse.json(
-      { success: false, error: "Missing date range parameters" },
-      { status: 400 }
-    );
-  }
-
+/**
+ * GET /api/reports/costs
+ *
+ * Generates a financial report for a given date range.
+ * Query Params:
+ * - ?startDate=YYYY-MM-DD
+ * - ?endDate=YYYY-MM-DD
+ */
+export async function GET(req: Request) {
   try {
-    const startDate = new Date(from);
-    const endDate = new Date(to);
+    const { searchParams } = new URL(req.url);
 
-    // --- FIX: Check for invalid dates ---
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return NextResponse.json(
-        { success: false, error: "Invalid date format. Use ISO string." },
-        { status: 400 }
-      );
-    }
-    // --- END FIX ---
+    // Default to the last 30 days if no dates are provided
+    const defaultEndDate = toUTC(new Date());
+    const defaultStartDate = toUTC(
+      new Date(defaultEndDate.getTime() - 30 * 24 * 60 * 60 * 1000),
+    );
 
-    // 1. Calculate Purchase Costs
-    const purchaseCosts = await prisma.purchaseOrderItem.aggregate({
+    const startDate = searchParams.get('startDate')
+      ? toUTC(new Date(searchParams.get('startDate')!))
+      : defaultStartDate;
+    const endDate = searchParams.get('endDate')
+      ? toUTC(new Date(searchParams.get('endDate')!))
+      : defaultEndDate;
+
+    // Ensure endDate includes the entire day
+    endDate.setUTCHours(23, 59, 59, 999);
+
+    // 1. Calculate Total Purchase Costs
+    const purchaseCostData = await prisma.purchaseOrderItem.aggregate({
       _sum: {
         totalItemCost: true,
       },
       where: {
         purchaseOrder: {
-          status: {
-            in: ["RECEIVED", "PARTIALLY_RECEIVED"],
-          },
+          status: POStatus.RECEIVED,
           actualDeliveryDate: {
             gte: startDate,
             lte: endDate,
@@ -60,13 +50,15 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // 2. Calculate Waste Costs (from Client Returns / PanShipment)
-    const clientReturnWaste = await prisma.wasteRecord.aggregate({
+    const totalPurchaseCosts = purchaseCostData._sum.totalItemCost || new Decimal(0);
+
+    // 2. Calculate Client-Return Waste Costs
+    const clientWasteData = await prisma.wasteRecord.aggregate({
       _sum: {
         costValue: true,
       },
       where: {
-        reason: "CLIENT_RETURN",
+        reason: WasteReason.CLIENT_RETURN,
         createdAt: {
           gte: startDate,
           lte: endDate,
@@ -74,14 +66,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // 3. Calculate Internal Waste Costs
-    const internalWaste = await prisma.wasteRecord.aggregate({
+    const totalClientReturnWasteCosts =
+      clientWasteData._sum.costValue || new Decimal(0);
+
+    // 3. Calculate Internal Waste Costs (Spoilage, Prep Errors, etc.)
+    const internalWasteData = await prisma.wasteRecord.aggregate({
       _sum: {
         costValue: true,
       },
       where: {
         reason: {
-          not: "CLIENT_RETURN",
+          not: WasteReason.CLIENT_RETURN,
         },
         createdAt: {
           gte: startDate,
@@ -90,39 +85,40 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const purchaseCostsNum =
-      purchaseCosts._sum.totalItemCost?.toNumber() || 0;
-    const clientReturnWasteNum =
-      clientReturnWaste._sum.costValue?.toNumber() || 0;
-    const internalWasteNum = internalWaste._sum.costValue?.toNumber() || 0;
+    const totalInternalWasteCosts =
+      internalWasteData._sum.costValue || new Decimal(0);
 
-    const totalCosts =
-      purchaseCostsNum + clientReturnWasteNum + internalWasteNum;
+    // 4. Calculate Total Waste
+    const totalWasteCosts = totalClientReturnWasteCosts.plus(
+      totalInternalWasteCosts,
+    );
 
-    const report: CostReportResponse = {
+    // 5. Calculate Total Overall Costs
+    const totalCosts = totalPurchaseCosts.plus(totalWasteCosts);
+
+    // Prepare the final report object
+    const report = {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       summary: {
-        totalCosts: totalCosts,
-        totalPurchaseCosts: purchaseCostsNum,
-        totalWasteCosts: clientReturnWasteNum + internalWasteNum,
+        totalCosts: totalCosts.toNumber(),
+        totalPurchaseCosts: totalPurchaseCosts.toNumber(),
+        totalWasteCosts: totalWasteCosts.toNumber(),
       },
       breakdown: {
-        purchaseCosts: purchaseCostsNum,
-        clientReturnWaste: clientReturnWasteNum,
-        internalWaste: internalWasteNum,
+        purchaseCosts: totalPurchaseCosts.toNumber(),
+        clientReturnWaste: totalClientReturnWasteCosts.toNumber(),
+        internalWaste: totalInternalWasteCosts.toNumber(),
       },
+      // We can add more detailed breakdowns here in V2
     };
 
-    return NextResponse.json({ success: true, data: report });
+    return NextResponse.json(report);
   } catch (error) {
-    let errorMessage = "An unknown error occurred";
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    }
+    console.error('Failed to generate financial report:', error);
     return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
+      { error: 'Internal server error' },
+      { status: 500 },
     );
   }
 }
