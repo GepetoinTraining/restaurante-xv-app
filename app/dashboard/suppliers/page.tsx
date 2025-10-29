@@ -121,7 +121,7 @@ function SuppliersPageContent() {
     <>
       <PageHeader
         title="Fornecedores"
-        actionButton={
+        rightSection={
           <Button leftSection={<IconPlus size={16} />} onClick={handleOpenCreateModal}>
             Novo Fornecedor
           </Button>
