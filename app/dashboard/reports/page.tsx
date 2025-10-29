@@ -25,9 +25,8 @@ import { SalesReport } from "./components/SalesReport";
 // Import the sales report type
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
 
-// --- FIX: Remove incorrect import for CostReportResponse ---
-// import { CostReportResponse } from "@/app/api/reports/costs/route";
-import { ApiResponse, FinancialReport } from "@/lib/types"; // FinancialReport is the correct type
+// Import the correct FinancialReport type
+import { ApiResponse, FinancialReport } from "@/lib/types";
 import { FinancialReportDisplay } from "../financials/components/FinancialReportDisplay";
 // ----------------------------------------------------------------
 
@@ -41,8 +40,14 @@ function ReportsPageContent() {
     new Date(),
   ]);
 
-  const from = dateRange[0]?.toISOString() || "";
-  const to = dateRange[1]?.toISOString() || "";
+  // --- FIX: Check if date is a Date object before calling toISOString ---
+  const from = (dateRange[0] && dateRange[0] instanceof Date)
+    ? dateRange[0].toISOString()
+    : "";
+  const to = (dateRange[1] && dateRange[1] instanceof Date)
+    ? dateRange[1].toISOString()
+    : "";
+  // --- END FIX ---
 
   // Query for Sales Report
   const {
@@ -66,11 +71,9 @@ function ReportsPageContent() {
     isError: isErrorCost,
     error: costError,
     refetch: refetchCostReport,
-    // --- FIX: Use the correct FinancialReport type ---
   } = useQuery<ApiResponse<FinancialReport>>({
     queryKey: ['costReport', from, to],
     queryFn: () =>
-      // --- FIX: Use the correct API route ---
       fetch(`/api/reports/costs?from=${from}&to=${to}`)
         .then((res) => res.json()),
     enabled: !!(from && to && activeTab === 'costs'), // Only fetch if tab is active
@@ -90,7 +93,6 @@ function ReportsPageContent() {
   const isError = isErrorSales || isErrorCost;
   const error = salesError || costError;
 
-  // --- FIX: Use the correct FinancialReport type ---
   const salesReport: SalesReportResponse | undefined = salesReportData?.data;
   const costReport: FinancialReport | undefined = costReportData?.data;
 
@@ -145,7 +147,6 @@ function ReportsPageContent() {
           </Tabs.Panel>
 
           <Tabs.Panel value="costs">
-            {/* --- FIX: Cast is no longer needed --- */}
             {costReport && !isLoading && !isError && (
               <FinancialReportDisplay report={costReport} />
             )}
