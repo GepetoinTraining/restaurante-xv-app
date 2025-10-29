@@ -1,9 +1,9 @@
 // PATH: lib/theme.ts
 "use client";
 
-import { createTheme, MantineColorsTuple } from '@mantine/core';
+import { createTheme, MantineColorsTuple, MantineThemeOverride } from '@mantine/core';
 
-// The new greenish-gray color tuple you provided
+// ... (brandGreen and dark color tuples remain the same) ...
 const brandGreen: MantineColorsTuple = [
   '#f0f9f4',
   '#e1f0e7',
@@ -18,41 +18,35 @@ const brandGreen: MantineColorsTuple = [
 ];
 
 export const theme = createTheme({
-  // Use the font you're loading in globals.css
   fontFamily: 'Montserrat, sans-serif',
-  
   colors: {
-    // 1. Register your new color
     brandGreen,
-
-    // 2. Override the default 'dark' color palette
-    // This achieves your "greenish gray for the base dark mode"
-    // App backgrounds, papers, and cards will now use these shades in dark mode
     dark: [
-      '#f0f9f4',
-      '#99d2ac',
-      '#79c493',
-      '#5ab879',
-      '#4aa267',
-      '#3f905b',
-      '#1e4b30', // A new intermediate dark shade
-      '#143220', // Used for Paper/Card backgrounds in dark mode
-      '#0d2115', // Used for hover effects
-      '#09170e'  // Used for the main body background in dark mode
+      '#f0f9f4', // 0: Text color (very light)
+      '#99d2ac', // 1
+      '#79c493', // 2
+      '#5ab879', // 3
+      '#4aa267', // 4
+      '#3f905b', // 5
+      '#1e4b30', // 6: Used for borders, hover backgrounds
+      '#143220', // 7: Used for Paper/Card backgrounds in dark mode
+      '#0d2115', // 8: Used for subtle hover effects
+      '#09170e'  // 9: Used for the main body background in dark mode
     ],
   },
-  
-  // 3. Set your new color as the primary "brand" color
   primaryColor: 'brandGreen',
-
-  // 4. Set different default shades for light and dark modes
-  // This will make buttons and links look good in both modes automatically
   primaryShade: {
     light: 6,
     dark: 8,
   },
 
-  // 5. Add some global component overrides for consistency
+  // --- ADD THIS SECTION ---
+  other: {
+    // Override the default body background for light mode
+    bodyBackgroundLight: 'var(--mantine-color-gray-0)', // Use the lightest gray
+  } as MantineThemeOverride['other'] & { bodyBackgroundLight?: string }, // Type assertion needed for custom property
+  // -----------------------
+
   components: {
     Paper: {
       defaultProps: {

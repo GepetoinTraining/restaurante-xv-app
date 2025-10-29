@@ -9,7 +9,7 @@ import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CompanyClient, Menu } from "@prisma/client";
-import { DatePicker } from "@mantine/dates";
+import { StandardCalendar } from "../../../components/ui/StandardCalendar";
 import 'dayjs/locale/pt-br';
 import dayjs from "dayjs";
 import { DailyAssignmentManager } from "./components/DailyAssignmentManager";
@@ -199,14 +199,7 @@ function MenuAssignmentsPage() {
         )}
         <Group align="flex-start">
             {/* Calendar */}
-             <DatePicker
-                locale="pt-br"
-                value={selectedDate}
-                onChange={handleDateSelect} // This should now pass compilation
-                getDayProps={(date) => ({
-                    // Optional: Highlight today or dates with assignments?
-                })}
-            />
+             <StandardCalendar/>
              {/* Assignment Manager */}
              <Stack style={{ flexGrow: 1, position: 'relative' }}>
                 <LoadingOverlay visible={isLoading} overlayProps={{blur: 1}}/>
