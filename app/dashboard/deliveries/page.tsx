@@ -172,10 +172,10 @@ function DeliveriesPage() {
     <>
     <Container fluid>
       <Stack gap="lg">
-        <PageHeader
-            title="Despacho de Entregas"
-            actionButton={
-                <Button
+        <PageHeader 
+                title="Despacho de Entregas"
+                rightSection={
+                    <Button
                     leftSection={<IconPlus size={16}/>}
                     onClick={handleOpenCreate}
                     disabled={isLoading || isError}
