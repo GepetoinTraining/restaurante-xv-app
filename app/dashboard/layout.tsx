@@ -36,7 +36,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 hiddenFrom="sm"
                 size="sm"
               />
-              <Image src="/logo.png" alt="Espaço XV Logo" h={40} w="auto" fallbackSrc="https://placehold.co/100x40" />
+              <Image src="../../public/logo.png" alt="Espaço XV Logo" h={40} w="auto" fallbackSrc="https://placehold.co/100x40" />
             </Group>
 
             {/* Right Side Icons */}

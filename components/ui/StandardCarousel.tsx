@@ -57,8 +57,7 @@ export function StandardCarousel({ slides, height = 400 }: StandardCarouselProps
         withIndicators
         height={height}
         slideSize="100%"
-        loop={false} // Better for recipe steps
-        align="start"
+        slideGap="md"
       >
         {slideComponents}
       </Carousel>
