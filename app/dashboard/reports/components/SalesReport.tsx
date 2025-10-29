@@ -1,168 +1,171 @@
-// PATH: app/dashboard/reports/page.tsx
-'use client';
+// PATH: app/dashboard/reports/components/SalesReport.tsx
+// MODIFIED to include cost data display
 
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+"use client";
+
 import {
   Alert,
-  Box,
-  LoadingOverlay,
+  SimpleGrid,
   Paper,
-  SegmentedControl,
-  Tabs,
-  Title,
   Text,
+  Title,
+  Stack,
+  Loader,
+  Center,
+  Table,
+  Divider, // Import Divider
 } from "@mantine/core";
-import {
-  QueryClient,
-  QueryClientProvider,
-  useQuery,
-} from "@tanstack/react-query";
-import { DatePickerInput, DateValue } from "@mantine/dates";
-import { useState } from "react";
 import { IconAlertCircle } from "@tabler/icons-react";
-import { subDays } from "date-fns";
-import { SalesReport } from "./components/SalesReport";
-// Import the sales report type
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
+// --- FIX: Import FinancialReport from lib/types, not CostReportResponse ---
+import { FinancialReport } from "@/lib/types";
+import { formatCurrency } from "@/lib/utils";
 
-// --- FIX: Remove incorrect import for CostReportResponse ---
-// import { CostReportResponse } from "@/app/api/reports/costs/route";
-import { ApiResponse, FinancialReport } from "@/lib/types"; // FinancialReport is the correct type
-import { FinancialReportDisplay } from "../financials/components/FinancialReportDisplay";
-// ----------------------------------------------------------------
+interface SalesReportProps {
+  salesData: SalesReportResponse | undefined;
+  // --- FIX: Use FinancialReport type ---
+  costData: FinancialReport | undefined; // Add cost data prop
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+}
 
-// Create a client
-const queryClient = new QueryClient();
-
-function ReportsPageContent() {
-  const [activeTab, setActiveTab] = useState<string | null>("sales");
-  const [dateRange, setDateRange] = useState<[DateValue, DateValue]>([
-    subDays(new Date(), 7),
-    new Date(),
-  ]);
-
-  const from = dateRange[0]?.toISOString() || "";
-  const to = dateRange[1]?.toISOString() || "";
-
-  // Query for Sales Report
-  const {
-    data: salesReportData,
-    isLoading: isLoadingSales,
-    isError: isErrorSales,
-    error: salesError,
-    refetch: refetchSalesReport,
-  } = useQuery<ApiResponse<SalesReportResponse>>({
-    queryKey: ['salesReport', from, to],
-    queryFn: () =>
-      fetch(`/api/reports/sales?from=${from}&to=${to}`)
-        .then((res) => res.json()),
-    enabled: !!(from && to && activeTab === 'sales'), // Only fetch if tab is active
-  });
-
-  // Query for Cost Report
-  const {
-    data: costReportData,
-    isLoading: isLoadingCost,
-    isError: isErrorCost,
-    error: costError,
-    refetch: refetchCostReport,
-    // --- FIX: Use the correct FinancialReport type ---
-  } = useQuery<ApiResponse<FinancialReport>>({
-    queryKey: ['costReport', from, to],
-    queryFn: () =>
-      // --- FIX: Use the correct API route ---
-      fetch(`/api/reports/costs?from=${from}&to=${to}`)
-        .then((res) => res.json()),
-    enabled: !!(from && to && activeTab === 'costs'), // Only fetch if tab is active
-  });
-
-  const handleDateChange = (range: [DateValue, DateValue]) => {
-    setDateRange(range);
-    // Refetch active tab's data
-    if (activeTab === 'sales') {
-      refetchSalesReport();
-    } else if (activeTab === 'costs') {
-      refetchCostReport();
-    }
-  };
-
-  const isLoading = isLoadingSales || isLoadingCost;
-  const isError = isErrorSales || isErrorCost;
-  const error = salesError || costError;
-
-  // --- FIX: Use the correct FinancialReport type ---
-  const salesReport: SalesReportResponse | undefined = salesReportData?.data;
-  const costReport: FinancialReport | undefined = costReportData?.data;
-
+// Stat card component (unchanged)
+function StatCard({ title, value, color }: { title: string; value: string; color?: string }) {
   return (
-    <>
-      <PageHeader
-        title="Relatórios"
-        actionButton={
-          <DatePickerInput
-            type="range"
-            label="Período"
-            placeholder="Selecione o período"
-            value={dateRange}
-            onChange={handleDateChange}
-            maw={300}
-            clearable={false}
-          />
-        }
-      />
-
-      <Tabs value={activeTab} onChange={setActiveTab} mt="md">
-        <Tabs.List>
-          <Tabs.Tab value="sales">Relatório de Vendas</Tabs.Tab>
-          <Tabs.Tab value="costs">Relatório de Custos</Tabs.Tab>
-        </Tabs.List>
-
-        <Box pos="relative" pt="md">
-          <LoadingOverlay
-            visible={isLoading}
-            zIndex={1000}
-            overlayProps={{ radius: "sm", blur: 2 }}
-          />
-
-          {isError && (
-            <Alert
-              color="red"
-              title="Erro ao carregar relatório"
-              icon={<IconAlertCircle />}
-            >
-              {(error as Error)?.message ||
-                "Não foi possível carregar os dados do relatório."}
-            </Alert>
-          )}
-
-          <Tabs.Panel value="sales">
-            {salesReport && !isLoading && !isError && (
-              <SalesReport data={salesReport} />
-            )}
-            {!salesReport && !isLoading && !isError && (
-              <Text c="dimmed">Nenhum dado de vendas para este período.</Text>
-            )}
-          </Tabs.Panel>
-
-          <Tabs.Panel value="costs">
-            {/* --- FIX: Cast is no longer needed --- */}
-            {costReport && !isLoading && !isError && (
-              <FinancialReportDisplay report={costReport} />
-            )}
-            {!costReport && !isLoading && !isError && (
-              <Text c="dimmed">Nenhum dado de custos para este período.</Text>
-            )}
-          </Tabs.Panel>
-        </Box>
-      </Tabs>
-    </>
+    <Paper withBorder p="md" radius="md">
+      <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+        {title}
+      </Text>
+      <Text fz={32} fw={700} c={color}> {/* Apply color if provided */}
+        {value}
+      </Text>
+    </Paper>
   );
 }
 
-export default function ReportsPage() {
+export function SalesReport({
+  salesData,
+  costData, // Receive cost data
+  isLoading,
+  isError,
+  error,
+}: SalesReportProps) {
+  if (isLoading) {
+    return (
+      <Center h={200}>
+        <Loader />
+      </Center>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Alert
+        color="red"
+        title="Erro ao Gerar Relatório"
+        icon={<IconAlertCircle />}
+      >
+        {error?.message || "Ocorreu um erro."}
+      </Alert>
+    );
+  }
+
+  // Handle case where only one report type might have loaded, or neither
+  if (!salesData && !costData) {
+    return (
+      <Center h={200}>
+        <Text c="dimmed">
+          Selecione um período para gerar o relatório.
+        </Text>
+      </Center>
+    );
+  }
+
+  // --- Format Sales Data (if available) ---
+  const totalRevenue = salesData ? formatCurrency(parseFloat(salesData.totalRevenue)) : "N/A";
+  const totalOrders = salesData ? salesData.totalOrders.toString() : "N/A";
+  const totalItemsSold = salesData ? salesData.totalItemsSold.toString() : "N/A";
+
+  const productRows = salesData?.topSellingProducts.map((product) => (
+    <Table.Tr key={product.productId}>
+      <Table.Td>{product.name}</Table.Td>
+      <Table.Td>{product.quantity}</Table.Td>
+      <Table.Td>
+        {formatCurrency(parseFloat(product.revenue))}
+      </Table.Td>
+    </Table.Tr>
+  ));
+
+  // --- FIX: Format Cost Data using FinancialReport type ---
+  const totalPurchaseCost = costData ? formatCurrency(costData.summary.totalPurchaseCosts) : "N/A";
+  const totalWasteCost = costData ? formatCurrency(costData.summary.totalWasteCosts) : "N/A";
+  // 'totalBuffetRevenue' and 'totalPrepCost' are not in FinancialReport, so we use what is available.
+
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <ReportsPageContent />
-    </QueryClientProvider>
+    <Stack gap="lg">
+      {/* --- Sales Stats Grid --- */}
+      {salesData && (
+          <>
+            <Title order={3} mt="md">Resumo de Vendas</Title>
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                <StatCard title="Receita Total (Vendas)" value={totalRevenue} color="green.4"/>
+                <StatCard title="Total de Pedidos" value={totalOrders} />
+                <StatCard title="Itens Vendidos (Pedidos)" value={totalItemsSold} />
+            </SimpleGrid>
+          </>
+      )}
+
+
+      {/* --- Cost Stats Grid --- */}
+      {costData && (
+          <>
+             {/* --- FIX: Updated Title --- */}
+             <Title order={3} mt="lg">Resumo de Custos</Title>
+             {/* --- FIX: Updated SimpleGrid to show available data --- */}
+             <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <StatCard title="Custo de Compras" value={totalPurchaseCost} color="orange.4"/>
+                <StatCard title="Custo de Perdas (Total)" value={totalWasteCost} color="red.4"/>
+             </SimpleGrid>
+          </>
+      )}
+
+      {/* --- Divider --- */}
+      {salesData && costData && <Divider my="lg" />}
+
+      {/* --- Top Selling Products Table --- */}
+      {salesData && (
+        <Paper withBorder p="md" radius="md">
+            <Title order={4} mb="md">
+            Produtos Mais Vendidos (Top 10 por Quantidade)
+            </Title>
+            <Table.ScrollContainer minWidth={400}>
+            <Table striped>
+                <Table.Thead>
+                <Table.Tr>
+                    <Table.Th>Produto</Table.Th>
+                    <Table.Th>Quantidade</Table.Th>
+                    <Table.Th>Receita Gerada</Table.Th>
+                </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                {productRows && productRows.length > 0 ? (
+                    productRows
+                ) : (
+                    <Table.Tr>
+                    <Table.Td colSpan={3}>
+                        <Text c="dimmed" ta="center">
+                        Nenhum produto vendido neste período.
+                        </Text>
+                    </Table.Td>
+                    </Table.Tr>
+                )}
+                </Table.Tbody>
+            </Table>
+            </Table.ScrollContainer>
+        </Paper>
+      )}
+    </Stack>
   );
 }

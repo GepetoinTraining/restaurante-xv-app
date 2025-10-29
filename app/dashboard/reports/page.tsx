@@ -22,12 +22,12 @@ import { useState } from "react";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { subDays } from "date-fns";
 import { SalesReport } from "./components/SalesReport";
-// Import the new cost report type
+// Import the sales report type
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
 
-// --- FIX: Import CostReportResponse from its API route ---
-import { CostReportResponse } from "@/app/api/reports/costs/route";
-import { ApiResponse, FinancialReport } from "@/lib/types"; // FinancialReport is no longer needed here for the query
+// --- FIX: Remove incorrect import for CostReportResponse ---
+// import { CostReportResponse } from "@/app/api/reports/costs/route";
+import { ApiResponse, FinancialReport } from "@/lib/types"; // FinancialReport is the correct type
 import { FinancialReportDisplay } from "../financials/components/FinancialReportDisplay";
 // ----------------------------------------------------------------
 
@@ -66,8 +66,8 @@ function ReportsPageContent() {
     isError: isErrorCost,
     error: costError,
     refetch: refetchCostReport,
-    // --- FIX: Use the correct CostReportResponse type ---
-  } = useQuery<ApiResponse<CostReportResponse>>({
+    // --- FIX: Use the correct FinancialReport type ---
+  } = useQuery<ApiResponse<FinancialReport>>({
     queryKey: ['costReport', from, to],
     queryFn: () =>
       // --- FIX: Use the correct API route ---
@@ -90,9 +90,9 @@ function ReportsPageContent() {
   const isError = isErrorSales || isErrorCost;
   const error = salesError || costError;
 
-  // --- FIX: Use the correct CostReportResponse type ---
+  // --- FIX: Use the correct FinancialReport type ---
   const salesReport: SalesReportResponse | undefined = salesReportData?.data;
-  const costReport: CostReportResponse | undefined = costReportData?.data;
+  const costReport: FinancialReport | undefined = costReportData?.data;
 
   return (
     <>
@@ -145,9 +145,9 @@ function ReportsPageContent() {
           </Tabs.Panel>
 
           <Tabs.Panel value="costs">
-            {/* --- FIX: Cast costReport to FinancialReport if component expects it --- */}
+            {/* --- FIX: Cast is no longer needed --- */}
             {costReport && !isLoading && !isError && (
-              <FinancialReportDisplay report={costReport as FinancialReport} />
+              <FinancialReportDisplay report={costReport} />
             )}
             {!costReport && !isLoading && !isError && (
               <Text c="dimmed">Nenhum dado de custos para este período.</Text>
