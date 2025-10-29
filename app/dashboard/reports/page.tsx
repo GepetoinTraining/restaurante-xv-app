@@ -21,13 +21,16 @@ import { DatePickerInput, DateValue } from "@mantine/dates";
 import { useState } from "react";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { subDays } from "date-fns";
+
+// --- FIX: This is the component we will use for both tabs ---
 import { SalesReport } from "./components/SalesReport";
-// Import the sales report type
+// ----------------------------------------------------------------
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
 
 // Import the correct FinancialReport type
 import { ApiResponse, FinancialReport } from "@/lib/types";
-import { FinancialReportDisplay } from "../financials/components/FinancialReportDisplay";
+// --- FIX: This component is no longer needed if SalesReport handles costs ---
+// import { FinancialReportDisplay } from "../financials/components/FinancialReportDisplay";
 // ----------------------------------------------------------------
 
 // Create a client
@@ -89,9 +92,11 @@ function ReportsPageContent() {
     }
   };
 
-  const isLoading = isLoadingSales || isLoadingCost;
-  const isError = isErrorSales || isErrorCost;
-  const error = salesError || costError;
+  // --- FIX: These are now separate for each query ---
+  // const isLoading = isLoadingSales || isLoadingCost;
+  // const isError = isErrorSales || isErrorCost;
+  // const error = salesError || costError;
+  // --- END FIX ---
 
   const salesReport: SalesReportResponse | undefined = salesReportData?.data;
   const costReport: FinancialReport | undefined = costReportData?.data;
@@ -119,40 +124,31 @@ function ReportsPageContent() {
           <Tabs.Tab value="costs">Relatório de Custos</Tabs.Tab>
         </Tabs.List>
 
+        {/* --- FIX: We can remove the outer LoadingOverlay/Alert --- */}
+        {/* The SalesReport component handles its own loading/error state */}
         <Box pos="relative" pt="md">
-          <LoadingOverlay
-            visible={isLoading}
-            zIndex={1000}
-            overlayProps={{ radius: "sm", blur: 2 }}
-          />
-
-          {isError && (
-            <Alert
-              color="red"
-              title="Erro ao carregar relatório"
-              icon={<IconAlertCircle />}
-            >
-              {(error as Error)?.message ||
-                "Não foi possível carregar os dados do relatório."}
-            </Alert>
-          )}
-
           <Tabs.Panel value="sales">
-            {salesReport && !isLoading && !isError && (
-              <SalesReport data={salesReport} />
-            )}
-            {!salesReport && !isLoading && !isError && (
-              <Text c="dimmed">Nenhum dado de vendas para este período.</Text>
-            )}
+            {/* --- FIX: Pass all required props to SalesReport --- */}
+            <SalesReport
+              salesData={salesReport}
+              costData={undefined} // Don't pass cost data here
+              isLoading={isLoadingSales}
+              isError={isErrorSales}
+              error={salesError as Error | null}
+            />
+            {/* --- END FIX --- */}
           </Tabs.Panel>
 
           <Tabs.Panel value="costs">
-            {costReport && !isLoading && !isError && (
-              <FinancialReportDisplay report={costReport} />
-            )}
-            {!costReport && !isLoading && !isError && (
-              <Text c="dimmed">Nenhum dado de custos para este período.</Text>
-            )}
+            {/* --- FIX: Use SalesReport component for costs too --- */}
+            <SalesReport
+              salesData={undefined} // Don't pass sales data here
+              costData={costReport}
+              isLoading={isLoadingCost}
+              isError={isErrorCost}
+              error={costError as Error | null}
+            />
+            {/* --- END FIX --- */}
           </Tabs.Panel>
         </Box>
       </Tabs>
