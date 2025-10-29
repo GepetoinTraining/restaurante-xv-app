@@ -7,9 +7,12 @@ import {
     UserPlus, LineChart, LogOut, Armchair, Package,
     CookingPot, ClipboardCheck, ClipboardList,
     Receipt, Scale, Trash2,
-    // --- NEW ICONS FOR GROUPS ---
-    Home, 
-    Settings
+    // --- ICONS FOR GROUPS ---
+    Home,
+    Settings,
+    // --- NEW ICONS ---
+    Truck, Map, Undo2, Building, ClipboardPaste, DollarSign,
+    Flame, CalendarDays, Briefcase, Building2, Filter
     // --- END NEW ICONS ---
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -62,14 +65,43 @@ const navLinks: NavGroup[] = [
             { icon: ClipboardCheck, label: "Minhas Tarefas", href: "/dashboard/my-tasks" },
             { icon: ClipboardList, label: "Gerenciar Preparos", href: "/dashboard/prep-management" },
             { icon: Scale, label: "Buffet & Pesagem", href: "/dashboard/weigh-station" },
+            // --- NEW ---
+            { icon: Flame, label: "Status do Buffet", href: "/dashboard/buffet-status" },
+            { icon: CalendarDays, label: "Menu do Dia", href: "/dashboard/daily-menu-assignments" },
+            // --- END NEW ---
         ]
     },
+    // --- NEW GROUP ---
+    {
+        icon: Truck,
+        label: "Logística B2B",
+        links: [
+            { icon: Truck, label: "Entregas", href: "/dashboard/deliveries" },
+            { icon: Map, label: "Roteirização", href: "/dashboard/routing" },
+            { icon: Undo2, label: "Retorno de GNs", href: "/dashboard/pan-return" },
+        ]
+    },
+    // --- NEW GROUP ---
+    {
+        icon: Briefcase,
+        label: "Comercial B2B",
+        links: [
+            { icon: Building2, label: "Clientes Corporativos", href: "/dashboard/company-clients" },
+            { icon: Filter, label: "Pipeline de Vendas", href: "/dashboard/sales-pipeline" },
+        ]
+    },
+    // --- END NEW GROUP ---
     {
         icon: Settings,
         label: "Admin & Relatórios",
         links: [
             { icon: UserPlus, label: "Equipe", href: "/dashboard/staff" },
             { icon: LineChart, label: "Relatórios", href: "/dashboard/reports" },
+            // --- NEW ---
+            { icon: Building, label: "Fornecedores", href: "/dashboard/suppliers" },
+            { icon: ClipboardPaste, label: "Ordens de Compra", href: "/dashboard/purchase-orders" },
+            { icon: DollarSign, label: "Financeiro", href: "/dashboard/financials" },
+            // --- END NEW ---
         ]
     },
 ];
@@ -109,7 +141,7 @@ const getNavLinkStyles = (theme: MantineTheme) => {
                     color: activeColors.color,
                 },
             },
-            
+
             '&:hover:not([data-active])': {
                 backgroundColor: 'var(--mantine-color-default-hover)',
             },
