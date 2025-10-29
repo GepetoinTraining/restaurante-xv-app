@@ -35,12 +35,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const validation = serverCallUpdateSchema.safeParse(body);
 
     if (!validation.success) {
-      // --- FIX: Serialize errors into 'error' string ---
       const errorDetails = validation.error.issues
           .map(issue => `${issue.path.join('.')}: ${issue.message}`)
           .join(', ');
       return NextResponse.json<ApiResponse>({ success: false, error: `Dados inválidos: ${errorDetails}` }, { status: 400 });
-      // -------------------------------------------------
     }
 
     const { status: newStatus } = validation.data;
@@ -56,14 +54,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const updateData: Prisma.ServerCallUpdateInput = { status: newStatus };
     let isValidTransition = false;
 
+    // --- FIX: Use 'connect' for relation fields ---
     if (newStatus === ServerCallStatus.ACKNOWLEDGED && currentCall.status === ServerCallStatus.PENDING) {
-      updateData.acknowledgedById = userId;
+      // updateData.acknowledgedById = userId; // <-- OLD (INCORRECT)
+      updateData.acknowledgedBy = { connect: { id: userId } }; // <-- NEW (CORRECT)
       updateData.acknowledgedAt = new Date();
       isValidTransition = true;
     } else if (newStatus === ServerCallStatus.RESOLVED && currentCall.status === ServerCallStatus.ACKNOWLEDGED) {
-      updateData.resolvedById = userId;
+      // updateData.resolvedById = userId; // <-- OLD (INCORRECT)
+      updateData.resolvedBy = { connect: { id: userId } }; // <-- NEW (CORRECT)
       updateData.resolvedAt = new Date();
       isValidTransition = true;
+    // --- END FIX ---
     } else if (newStatus === ServerCallStatus.CANCELLED && (currentCall.status === ServerCallStatus.PENDING || currentCall.status === ServerCallStatus.ACKNOWLEDGED)) {
       isValidTransition = true;
     }
