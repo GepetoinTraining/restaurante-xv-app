@@ -3,7 +3,7 @@
 // Use CDN imports for environments that can't resolve node_modules
 import { Calendar, type CalendarProps } from '@mantine/dates';
 import { Indicator, Stack, Text, Pill, UnstyledButton } from '@mantine/core';
-import 'hdayjs/locale/pt-br';
+import 'dayjs/locale/pt-br';
 
 // Define what a pill's data looks like
 export interface PillEvent {
