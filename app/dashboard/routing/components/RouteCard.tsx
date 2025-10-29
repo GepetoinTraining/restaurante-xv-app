@@ -1,240 +1,203 @@
-// PATH: app/dashboard/routing/components/RouteCard.tsx
+// File: app/dashboard/routing/components/RouteCard.tsx
 
 'use client';
 
 import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Group,
+  Menu,
   Paper,
+  Select,
+  Stack,
   Text,
   Title,
-  Stack,
-  Group,
-  Select,
-  ActionIcon,
-  Alert,
-  Divider,
 } from '@mantine/core';
-import { useDroppable } from '@dnd-kit/core';
 import {
-  IconBox,
-  IconExclamationCircle,
-  IconSteeringWheel,
+  IconDotsVertical,
+  IconDroplet,
+  IconEdit,
+  IconPencil,
   IconTrash,
+  IconTruck,
   IconUser,
 } from '@tabler/icons-react';
 import {
+  DeliveryWithClient,
+  RouteStopWithDelivery,
   RouteWithStops,
   StaffList,
   VehicleList,
 } from '@/lib/types';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios, { AxiosError } from 'axios';
-import { notifications } from '@mantine/notifications';
-import { Route, RouteStatus } from '@prisma/client';
+import { useDroppable } from '@dnd-kit/core';
+import { DraggableDeliveryItem } from './DraggableDeliveryItem';
+import { useState } from 'react';
+import { UseMutateFunction } from '@tanstack/react-query'; // Import UseMutateFunction
 
 type RouteCardProps = {
   route: RouteWithStops;
-  dateQueryParam: string; // To help with cache invalidation
+  vehicles: VehicleList[];
+  drivers: StaffList[];
+  // --- FIX: Added the missing prop ---
+  onUpdateRoute: UseMutateFunction<
+    RouteWithStops,
+    Error,
+    { routeId: string; vehicleId?: string; driverId?: string }
+  >;
+  // ----------------------------------
 };
 
-type ErrorResponse = { error: string };
-
-export function RouteCard({ route, dateQueryParam }: RouteCardProps) {
-  const queryClient = useQueryClient();
-  const { isOver, setNodeRef } = useDroppable({
-    id: `route-${route.id}`,
+export function RouteCard({
+  route,
+  vehicles,
+  drivers,
+  onUpdateRoute, // <-- Added here
+}: RouteCardProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `route-drop-zone-${route.id}`,
     data: {
-      type: 'ROUTE',
+      type: 'ROUTE_DROP_ZONE',
       routeId: route.id,
+      currentStopCount: route.stops.length,
     },
   });
 
-  // --- Data Fetching for Selects ---
-  const { data: vehicles, isLoading: isLoadingVehicles } = useQuery<
-    VehicleList[]
-  >({ queryKey: ['vehicles'] });
+  // State for inline editing
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(
+    route.vehicleId,
+  );
+  const [editingDriverId, setEditingDriverId] = useState<string | null>(
+    route.driverId,
+  );
+  const [isEditing, setIsEditing] = useState(false);
 
-  const { data: drivers, isLoading: isLoadingDrivers } = useQuery<StaffList[]>({
-    queryKey: ['staff', 'drivers'],
-  });
-
-  // --- Mutation for Updating Route (Driver/Vehicle) ---
-  const { mutate: updateRoute, isPending: isUpdating } = useMutation<
-    Route,
-    AxiosError<ErrorResponse>,
-    { vehicleId?: string | null; driverId?: string | null; status?: RouteStatus }
-  >({
-    mutationFn: (payload) =>
-      axios.patch(`/api/routes/${route.id}`, payload).then((res) => res.data),
-    onSuccess: (updatedRoute) => {
-      notifications.show({
-        title: 'Route Updated',
-        message: `${updatedRoute.routeName} has been updated.`,
-        color: 'blue',
-      });
-      // Invalidate and refetch the routes list
-      queryClient.invalidateQueries({ queryKey: ['routes', dateQueryParam] });
-    },
-    onError: (error) => {
-      notifications.show({
-        title: 'Error updating route',
-        message: error.response?.data?.error || 'Unknown error',
-        color: 'red',
-      });
-    },
-  });
-
-  // --- Mutation for Removing a Stop ---
-  const { mutate: removeStop, isPending: isRemoving } = useMutation<
-    unknown,
-    AxiosError<ErrorResponse>,
-    { stopId: string }
-  >({
-    mutationFn: ({ stopId }) => axios.delete(`/api/route-stops/${stopId}`),
-    onSuccess: () => {
-      notifications.show({
-        title: 'Stop Removed',
-        message: 'The stop has been removed from the route.',
-        color: 'orange',
-      });
-      // Refetch routes AND unassigned deliveries
-      queryClient.invalidateQueries({ queryKey: ['routes', dateQueryParam] });
-      queryClient.invalidateQueries({
-        queryKey: ['deliveries', dateQueryParam, 'unassigned'],
-      });
-    },
-    onError: (error) => {
-      notifications.show({
-        title: 'Error removing stop',
-        message: error.response?.data?.error || 'Unknown error',
-        color: 'red',
-      });
-    },
-  });
-
-  // --- Handlers ---
-  const handleVehicleChange = (vehicleId: string | null) => {
-    updateRoute({ vehicleId });
-  };
-  const handleDriverChange = (driverId: string | null) => {
-    updateRoute({ driverId });
-  };
-  const handleRemoveStop = (stopId: string) => {
-    removeStop({ stopId });
+  const handleSave = () => {
+    onUpdateRoute({
+      routeId: route.id,
+      vehicleId: editingVehicleId || undefined,
+      driverId: editingDriverId || undefined,
+    });
+    setIsEditing(false);
   };
 
-  const vehicleData =
-    vehicles?.map((v) => ({
-      value: v.id,
-      label: `${v.model} (${v.licensePlate})`,
-    })) || [];
-
-  const driverData =
-    drivers?.map((d) => ({
-      value: d.id,
-      label: d.name,
-    })) || [];
-
-  const dropzoneStyle = {
-    backgroundColor: isOver ? 'var(--mantine-color-green-light)' : undefined,
-    border: isOver
-      ? '2px dashed var(--mantine-color-green-filled)'
-      : '1px solid var(--mantine-color-gray-3)',
-    transition: 'background-color 0.2s ease, border 0.2s ease',
+  const handleCancel = () => {
+    setEditingVehicleId(route.vehicleId);
+    setEditingDriverId(route.driverId);
+    setIsEditing(false);
   };
+
+  const sortedStops = [...route.stops].sort((a, b) => a.stopOrder - b.stopOrder);
 
   return (
-    <Paper
-      ref={setNodeRef}
-      shadow="sm"
-      p="md"
-      withBorder
-      radius="md"
-      style={dropzoneStyle}
-    >
-      <Stack>
-        {/* --- Header & Assignment --- */}
-        <Group justify="space-between">
-          <Title order={4}>{route.routeName}</Title>
-          <Text size="sm" c="dimmed">
-            {route.status}
-          </Text>
-        </Group>
-        <Group grow>
-          <Select
-            label="Vehicle"
-            // --- FIX: 'icon' prop changed to 'leftSection' ---
-            leftSection={<IconSteeringWheel size={16} />}
-            placeholder="Assign vehicle"
-            data={vehicleData}
-            value={route.vehicleId}
-            onChange={handleVehicleChange}
-            disabled={isLoadingVehicles || isUpdating}
-            searchable
-            clearable
-          />
-          <Select
-            label="Driver"
-            // --- FIX: 'icon' prop changed to 'leftSection' ---
-            leftSection={<IconUser size={16} />}
-            placeholder="Assign driver"
-            data={driverData}
-            value={route.driverId}
-            onChange={handleDriverChange}
-            disabled={isLoadingDrivers || isUpdating}
-            searchable
-            clearable
-          />
-        </Group>
-
-        <Divider label="Stops" />
-
-        {/* --- Stops List --- */}
-        <Stack gap="xs">
-          {route.stops.length === 0 && (
-            <Alert
-              icon={<IconBox size={16} />}
-              color="gray"
-              variant="outline"
-              ta="center"
+    <Stack>
+      <Group justify="space-between" align="center">
+        <Title order={4}>Rota {route.id.substring(0, 4)}</Title>
+        <Menu shadow="md" width={200}>
+          <Menu.Target>
+            <ActionIcon variant="transparent">
+              <IconDotsVertical size={16} />
+            </ActionIcon>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Item
+              leftSection={<IconPencil size={14} />}
+              onClick={() => setIsEditing(true)}
             >
-              Drag unassigned deliveries here to add stops.
-            </Alert>
+              Editar Veículo/Motorista
+            </Menu.Item>
+            <Menu.Item leftSection={<IconTrash size={14} />} color="red">
+              Excluir Rota
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+      </Group>
+
+      <Paper
+        ref={setNodeRef}
+        p="md"
+        withBorder
+        miw={320}
+        mih={400}
+        style={{
+          backgroundColor: isOver
+            ? 'var(--mantine-color-blue-0)'
+            : 'var(--mantine-color-gray-1)',
+          borderStyle: isOver ? 'dashed' : 'solid',
+        }}
+      >
+        <Stack>
+          {isEditing ? (
+            <Stack>
+              <Select
+                label="Veículo"
+                data={vehicles.map((v) => ({
+                  label: `${v.model} (${v.licensePlate})`,
+                  value: v.id,
+                }))}
+                value={editingVehicleId}
+                onChange={setEditingVehicleId}
+                clearable
+              />
+              <Select
+                label="Motorista"
+                data={drivers.map((d) => ({ label: d.name, value: d.id }))}
+                value={editingDriverId}
+                onChange={setEditingDriverId}
+                clearable
+              />
+              <Group justify="flex-end">
+                <Button variant="default" size="xs" onClick={handleCancel}>
+                  Cancelar
+                </Button>
+                <Button size="xs" onClick={handleSave}>
+                  Salvar
+                </Button>
+              </Group>
+            </Stack>
+          ) : (
+            <Stack gap="xs">
+              <Group>
+                <IconTruck size={16} />
+                <Text fz="sm">
+                  {route.vehicle
+                    ? `${route.vehicle.model} (${route.vehicle.licensePlate})`
+                    : 'Nenhum veículo'}
+                </Text>
+              </Group>
+              <Group>
+                <IconUser size={16} />
+                <Text fz="sm">
+                  {drivers.find((d) => d.id === route.driverId)?.name ||
+                    'Nenhum motorista'}
+                </Text>
+              </Group>
+            </Stack>
           )}
 
-          {route.stops.map((stop, index) => (
-            <Paper
-              key={stop.id}
-              p="xs"
-              withBorder
-              radius="sm"
-              bg="var(--mantine-color-gray-0)"
-            >
-              <Group justify="space-between">
-                <Group gap="sm">
-                  <Text fw={700}>{index + 1}.</Text>
-                  <Stack gap={0}>
-                    <Text>
-                      {stop.delivery.companyClient.companyName}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {stop.delivery.companyClient.addressStreet ||
-                        'No address'}
-                    </Text>
-                  </Stack>
-                </Group>
-                <ActionIcon
-                  color="red"
-                  variant="light"
-                  onClick={() => handleRemoveStop(stop.id)}
-                  loading={isRemoving}
-                >
-                  <IconTrash size={16} />
-                </ActionIcon>
-              </Group>
-            </Paper>
-          ))}
+          {/* Render Stops */}
+          <Box mt="md">
+            {sortedStops.length === 0 ? (
+              <Text c="dimmed" ta="center" fz="sm" mt="xl">
+                Arraste entregas aqui
+              </Text>
+            ) : (
+              <Stack>
+                {sortedStops.map((stop, index) => (
+                  <DraggableDeliveryItem
+                    key={stop.id}
+                    delivery={stop.delivery}
+                    isAssigned
+                    stopNumber={index + 1}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Box>
         </Stack>
-      </Stack>
-    </Paper>
+      </Paper>
+    </Stack>
   );
 }

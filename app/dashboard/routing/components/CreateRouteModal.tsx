@@ -1,55 +1,81 @@
-// PATH: app/dashboard/routing/components/CreateRouteModal.tsx
+// File: app/dashboard/routing/components/CreateRouteModal.tsx
 
 'use client';
 
 import {
-  Modal,
+  Alert,
   Button,
+  Group,
+  LoadingOverlay,
+  Modal,
+  Select,
   Stack,
   TextInput,
-  Select,
-  LoadingOverlay,
-  Alert,
 } from '@mantine/core';
-import { useForm } from '@mantine/form';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios, { AxiosError } from 'axios';
+import { useForm, zodResolver } from '@mantine/form';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import axios from 'axios';
+import { z } from 'zod';
+import { ApiResponse, RouteWithStops, StaffList, VehicleList } from '@/lib/types';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconExclamationCircle } from '@tabler/icons-react';
-import { StaffList, VehicleList } from '@/lib/types';
-import { toUTC } from '@/lib/utils';
-import { Route } from '@prisma/client';
+import { IconAlertCircle } from '@tabler/icons-react';
+
+const createRouteSchema = z.object({
+  routeName: z.string().optional().nullable(),
+  vehicleId: z.string().optional().nullable(),
+  driverId: z.string().optional().nullable(),
+});
 
 type CreateRouteModalProps = {
   opened: boolean;
   onClose: () => void;
-  routeDate: Date; // The date selected on the manager page
-};
-
-type ErrorResponse = {
-  error: string;
+  routeDate: Date;
+  onSuccess: () => void;
 };
 
 export function CreateRouteModal({
   opened,
   onClose,
   routeDate,
+  onSuccess,
 }: CreateRouteModalProps) {
   const queryClient = useQueryClient();
 
-  // 1. Fetch Vehicles
+  // --- This modal fetches its own data ---
   const { data: vehicles, isLoading: isLoadingVehicles } = useQuery<
     VehicleList[]
   >({
-    queryKey: ['vehicles'],
-    queryFn: () => axios.get('/api/vehicles').then((res) => res.data),
+    queryKey: ['vehicles', 'list'],
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<VehicleList[]>>('/api/vehicles');
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch vehicles');
+      }
+      return res.data.data;
+    },
+    enabled: opened, // Only fetch when modal is open
   });
 
-  // 2. Fetch Drivers (Staff with DRIVER role)
-  const { data: drivers, isLoading: isLoadingDrivers } = useQuery<StaffList[]>({
+  const { data: drivers, isLoading: isLoadingDrivers } = useQuery<
+    StaffList[]
+  >({
     queryKey: ['staff', 'drivers'],
-    queryFn: () => axios.get('/api/staff?role=DRIVER').then((res) => res.data),
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<StaffList[]>>(
+        '/api/staff?role=DRIVER',
+      );
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch drivers');
+      }
+      return res.data.data;
+    },
+    enabled: opened, // Only fetch when modal is open
   });
+  // ---------------------------------------
 
   const form = useForm({
     initialValues: {
@@ -57,109 +83,95 @@ export function CreateRouteModal({
       vehicleId: null,
       driverId: null,
     },
+    // --- FIX: Cast schema to 'any' to resolve Zod/Mantine type bug ---
+    validate: zodResolver(createRouteSchema as any),
+    // -------------------------------------------------------------
   });
 
-  // 3. Mutation to create the route
   const {
     mutate: createRoute,
     isPending,
     isError,
     error,
   } = useMutation<
-    Route,
-    AxiosError<ErrorResponse>,
-    typeof form.values
+    RouteWithStops,
+    Error,
+    z.infer<typeof createRouteSchema>
   >({
-    mutationFn: (values) => {
-      const payload = {
-        ...values,
-        routeDate: toUTC(routeDate).toISOString(), // Use the date from props
-      };
-      return axios.post('/api/routes', payload).then((res) => res.data);
-    },
-    onSuccess: (newRoute) => {
+    mutationFn: (values) =>
+      axios
+        .post('/api/routes', {
+          ...values,
+          routeDate: routeDate.toISOString().split('T')[0],
+        })
+        .then((res) => res.data.data),
+    onSuccess: () => {
       notifications.show({
         title: 'Route Created',
-        message: `Successfully created ${newRoute.routeName}.`,
+        message: 'A new route has been successfully created.',
         color: 'green',
-        icon: <IconCheck />,
       });
-      // Invalidate the main routes query to refresh the list
-      queryClient.invalidateQueries({
-        queryKey: ['routes', routeDate.toISOString().split('T')[0]],
-      });
-      form.reset();
+      onSuccess(); // Call the prop
       onClose();
-    },
-    onError: (error) => {
-      notifications.show({
-        title: 'Error',
-        message:
-          error.response?.data?.error || 'Failed to create route.',
-        color: 'red',
-        icon: <IconExclamationCircle />,
-      });
+      form.reset();
     },
   });
 
-  const handleSubmit = (values: typeof form.values) => {
+  const handleSubmit = (values: z.infer<typeof createRouteSchema>) => {
     createRoute(values);
   };
 
-  // Format data for Select components
-  const vehicleData =
-    vehicles?.map((v) => ({
-      value: v.id,
-      label: `${v.model} (${v.licensePlate})`,
-    })) || [];
-
-  const driverData =
-    drivers?.map((d) => ({
-      value: d.id,
-      label: d.name,
-    })) || [];
+  const isLoading = isLoadingVehicles || isLoadingDrivers;
 
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title={`Create New Route for ${routeDate.toLocaleDateString()}`}
-      centered
-    >
-      <LoadingOverlay visible={isLoadingVehicles || isLoadingDrivers} />
+    <Modal opened={opened} onClose={onClose} title="Criar Nova Rota">
+      <LoadingOverlay visible={isLoading || isPending} />
       <form onSubmit={form.onSubmit(handleSubmit)}>
         <Stack>
           <TextInput
-            label="Route Name"
-            placeholder={`e.g., North Route ${routeDate.toLocaleDateString()}`}
+            label="Nome da Rota (Opcional)"
+            placeholder={`Rota de ${routeDate.toLocaleDateString()}`}
             {...form.getInputProps('routeName')}
           />
           <Select
-            label="Assign Vehicle"
-            placeholder="Select a vehicle"
-            data={vehicleData}
+            label="Veículo"
+            placeholder="Selecione um veículo"
+            data={vehicles?.map((v) => ({
+              label: `${v.model} (${v.licensePlate})`,
+              value: v.id,
+            }))}
             {...form.getInputProps('vehicleId')}
-            searchable
             clearable
           />
           <Select
-            label="Assign Driver"
-            placeholder="Select a driver"
-            data={driverData}
+            label="Motorista"
+            placeholder="Selecione um motorista"
+            data={drivers?.map((d) => ({
+              label: d.name,
+              value: d.id,
+            }))}
             {...form.getInputProps('driverId')}
-            searchable
             clearable
           />
 
           {isError && (
-            <Alert color="red" title="Error">
-              {error.response?.data?.error || 'An unknown error occurred.'}
+            <Alert
+              color="red"
+              icon={<IconAlertCircle size={16} />}
+              title="Error"
+            >
+              {error?.message || 'Failed to create route.'}
             </Alert>
           )}
 
-          <Button type="submit" loading={isPending} mt="md">
-            Create Route
-          </Button>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={onClose} disabled={isPending}>
+              Cancelar
+            </Button>
+            <Button type="submit" loading={isPending}>
+              Criar Rota
+            </Button>
+          </Group>
         </Stack>
       </form>
     </Modal>

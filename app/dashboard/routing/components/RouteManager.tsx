@@ -1,11 +1,11 @@
-// PATH: app/dashboard/routing/components/RouteManager.tsx
+// File: app/dashboard/routing/components/RouteManager.tsx
 
 'use client';
 
 import {
+  Alert,
   Box,
   Button,
-  Grid,
   Group,
   LoadingOverlay,
   Paper,
@@ -13,254 +13,305 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import { DatePickerInput } from '@mantine/dates';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios, { AxiosError } from 'axios';
-import { useState } from 'react';
-import { toUTC } from '@/lib/utils';
-import { DeliveryWithClient, RouteWithStops } from '@/lib/types';
-import { IconExclamationCircle, IconPlus } from '@tabler/icons-react';
+import { DatePickerInput, DateValue } from '@mantine/dates'; // Import DateValue
 import { useDisclosure } from '@mantine/hooks';
-import { CreateRouteModal } from './CreateRouteModal';
-// --- DND IMPORTS ---
+import { IconCalendar, IconCirclePlus } from '@tabler/icons-react';
 import {
-  DndContext,
-  DragEndEvent,
-  MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import axios from 'axios';
+import { useState } from 'react';
+import {
+  ApiResponse,
+  DeliveryWithClient,
+  RouteStopWithDelivery,
+  RouteWithStops,
+  StaffList,
+  VehicleList,
+} from '@/lib/types';
+import { DndContext, DragEndEvent } from '@dnd-kit/core';
+import { notifications } from '@mantine/notifications';
+import { CreateRouteModal } from './CreateRouteModal';
 import { DraggableDeliveryItem } from './DraggableDeliveryItem';
 import { RouteCard } from './RouteCard';
-import { notifications } from '@mantine/notifications';
-import { RouteStop } from '@prisma/client';
-// -------------------
-
-// ... (DataDisplayWrapper helper component remains the same) ...
-function DataDisplayWrapper({
-  isLoading,
-  error,
-  children,
-}: {
-  isLoading: boolean;
-  error: Error | null;
-  children: React.ReactNode;
-}) {
-  if (isLoading) {
-    return <LoadingOverlay visible />;
-  }
-  if (error) {
-    return (
-      <Text c="red">
-        Error fetching data: {error.message || 'Unknown error'}
-      </Text>
-    );
-  }
-  return <>{children}</>;
-}
-// -----------------------------------------------------------
-
-type ErrorResponse = { error: string };
 
 export function RouteManager() {
-  const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [
-    modalOpened,
-    { open: openModal, close: closeModal },
+    createModalOpened,
+    { open: openCreateModal, close: closeCreateModal },
   ] = useDisclosure(false);
 
-  const dateQueryParam = toUTC(selectedDate).toISOString().split('T')[0];
+  const queryClient = useQueryClient();
+  const dateQueryParam = selectedDate.toISOString().split('T')[0];
 
-  // --- Data Fetching ---
+  // --- 1. Fetch Routes for the selected date ---
   const {
     data: routes,
     isLoading: isLoadingRoutes,
-    error: routesError,
+    isError: isErrorRoutes,
   } = useQuery<RouteWithStops[]>({
     queryKey: ['routes', dateQueryParam],
-    queryFn: () =>
-      axios.get(`/api/routes?date=${dateQueryParam}`).then((res) => res.data),
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<RouteWithStops[]>>(
+        `/api/routes?date=${dateQueryParam}`,
+      );
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch routes');
+      }
+      return res.data.data;
+    },
   });
 
+  // --- 2. Fetch Unassigned Deliveries for the selected date ---
   const {
     data: unassignedDeliveries,
     isLoading: isLoadingDeliveries,
-    error: deliveriesError,
+    isError: isErrorDeliveries,
   } = useQuery<DeliveryWithClient[]>({
-    queryKey: ['deliveries', dateQueryParam, 'unassigned'],
-    queryFn: () =>
-      axios
-        .get(`/api/deliveries?date=${dateQueryParam}&unassigned=true`)
-        .then((res) => res.data),
+    queryKey: [
+      'deliveries',
+      'unassigned',
+      dateQueryParam,
+    ],
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<DeliveryWithClient[]>>(
+        `/api/deliveries?date=${dateQueryParam}&status=READY_FOR_DISPATCH`,
+      );
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch deliveries');
+      }
+      return res.data.data;
+    },
   });
 
-  // --- Mutation for ADDING a stop (from DND) ---
-  const { mutate: addStop, isPending: isAddingStop } = useMutation<
-    RouteStop,
-    AxiosError<ErrorResponse>,
-    { routeId: string; deliveryId: string }
+  // --- 3. Fetch supporting data for Modals (Vehicles, Drivers) ---
+  const { data: vehicles, isLoading: isLoadingVehicles } = useQuery<
+    VehicleList[]
   >({
-    mutationFn: ({ routeId, deliveryId }) =>
+    queryKey: ['vehicles', 'list'],
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<VehicleList[]>>('/api/vehicles');
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch vehicles');
+      }
+      return res.data.data;
+    },
+  });
+
+  const { data: drivers, isLoading: isLoadingDrivers } = useQuery<
+    StaffList[]
+  >({
+    queryKey: ['staff', 'drivers'],
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<StaffList[]>>(
+        '/api/staff?role=DRIVER',
+      );
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch drivers');
+      }
+      return res.data.data;
+    },
+  });
+
+  // --- Mutation for adding a stop to a route ---
+  const { mutate: addStop, isPending: isAddingStop } = useMutation<
+    RouteStopWithDelivery,
+    Error,
+    { routeId: string; deliveryId: string; stopOrder: number }
+  >({
+    mutationFn: ({ routeId, deliveryId, stopOrder }) =>
       axios
-        .post(`/api/routes/${routeId}/stops`, { deliveryId })
-        .then((res) => res.data),
+        .post(`/api/routes/${routeId}/stops`, { deliveryId, stopOrder })
+        .then((res) => res.data.data),
     onSuccess: () => {
       notifications.show({
-        title: 'Stop Added',
-        message: 'The delivery has been added to the route.',
+        title: 'Delivery Added',
+        message: 'Delivery has been successfully added to the route.',
         color: 'green',
       });
-      // Refetch both lists
-      queryClient.invalidateQueries({ queryKey: ['routes', dateQueryParam] });
       queryClient.invalidateQueries({
-        queryKey: ['deliveries', dateQueryParam, 'unassigned'],
+        queryKey: ['routes', dateQueryParam],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [
+          'deliveries',
+          'unassigned',
+          dateQueryParam,
+        ],
       });
     },
     onError: (error) => {
       notifications.show({
-        title: 'Error adding stop',
-        message:
-          error.response?.data?.error || 'An unknown error occurred.',
+        title: 'Error',
+        message: error.message || 'Failed to add delivery to route.',
         color: 'red',
-        icon: <IconExclamationCircle />,
       });
     },
   });
 
-  // --- DND Logic ---
-  const sensors = useSensors(useSensor(MouseSensor), useSensor(TouchSensor));
+  // --- Mutation for updating route details (vehicle/driver) ---
+  const { mutate: updateRoute, isPending: isUpdatingRoute } = useMutation<
+    RouteWithStops,
+    Error,
+    { routeId: string; vehicleId?: string; driverId?: string }
+  >({
+    mutationFn: ({ routeId, ...data }) =>
+      axios.patch(`/api/routes/${routeId}`, data).then((res) => res.data.data),
+    // --- FIX: Added '=>' and arrow function body ---
+    onSuccess: () => {
+      notifications.show({
+        title: 'Route Updated',
+        message: 'Route vehicle/driver has been updated.',
+        color: 'blue',
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['routes', dateQueryParam],
+      });
+    },
+    // --- END FIX ---
+    onError: (error) => {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update route.',
+        color: 'red',
+      });
+    },
+  });
 
+  // --- DND Drop Handler ---
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
-    // Check if we are dropping over a valid dropzone
-    if (!over) return;
-
-    // Check if we are dragging a DELIVERY
-    if (active.data.current?.type !== 'DELIVERY') return;
-
-    // Check if we are dropping onto a ROUTE
-    if (over.data.current?.type === 'ROUTE') {
+    if (
+      over &&
+      active.data.current?.type === 'DELIVERY' &&
+      over.data.current?.type === 'ROUTE_DROP_ZONE'
+    ) {
       const deliveryId = active.data.current?.deliveryId;
       const routeId = over.data.current?.routeId;
+      const currentStopCount = over.data.current?.currentStopCount || 0;
 
       if (deliveryId && routeId) {
-        // Optimistic update (visual only) before API call
-        // This is complex, so for MVP we will rely on the query invalidation
-        addStop({ routeId, deliveryId });
+        addStop({
+          routeId,
+          deliveryId,
+          stopOrder: currentStopCount + 1,
+        });
       }
     }
-    // We can add reordering logic here later
   };
 
-  const isLoading = isLoadingRoutes || isLoadingDeliveries;
+  const isLoading =
+    isLoadingRoutes ||
+    isLoadingDeliveries ||
+    isLoadingVehicles ||
+    isLoadingDrivers;
+
+  const isError = isErrorRoutes || isErrorDeliveries;
 
   return (
-    <>
-      <CreateRouteModal
-        opened={modalOpened}
-        onClose={closeModal}
-        routeDate={selectedDate}
-      />
-
+    <DndContext onDragEnd={handleDragEnd}>
       <Stack>
-        <Paper shadow="md" p="md" withBorder>
-          {/* ... (Header & Date Picker - same as before) ... */}
-           <Group justify="space-between">
-            <Title order={3}>
-              Routes for {selectedDate.toLocaleDateString()}
-            </Title>
+        <Paper withBorder p="md">
+          <Group justify="space-between">
             <DatePickerInput
-              label="Select Date"
-              placeholder="Pick date"
+              label="Data da Rota"
               value={selectedDate}
-              // --- FIX: Convert the string back to a Date object ---
-              onChange={(date) => {
-                // If date is truthy (not null) and is a string
+              // --- FIX: Handle string | Date | null from onChange ---
+              onChange={(date: DateValue) => {
                 if (date) {
-                  // We cast to 'any' to handle the string, then create a new Date
-                  setSelectedDate(new Date(date as any));
+                  setSelectedDate(new Date(date));
                 }
               }}
-              maw={300}
+              // --- FIX: Use 'leftSection' prop instead of 'icon' ---
+              leftSection={<IconCalendar size={16} />}
+              maw={250}
             />
+            <Button
+              leftSection={<IconCirclePlus size={16} />}
+              onClick={openCreateModal}
+              loading={isLoadingVehicles || isLoadingDrivers}
+              disabled={isLoadingVehicles || isLoadingDrivers}
+            >
+              Criar Nova Rota
+            </Button>
           </Group>
         </Paper>
 
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <Box pos="relative">
-            <LoadingOverlay visible={isLoading || isAddingStop} />
-            <Grid>
-              {/* --- Unassigned Deliveries Column --- */}
-              <Grid.Col span={4}>
-                <Paper shadow="sm" p="md" withBorder>
-                  <Title order={4} mb="md">
-                    Unassigned Deliveries
-                  </Title>
-                  <DataDisplayWrapper
-                    isLoading={isLoadingDeliveries}
-                    error={deliveriesError as Error | null}
-                  >
-                    <Stack gap="sm">
-                      {unassignedDeliveries?.length === 0 && (
-                        <Text c="dimmed" size="sm">
-                          No unassigned deliveries for this date.
-                        </Text>
-                      )}
-                      {unassignedDeliveries?.map((delivery) => (
-                        // --- Use Draggable Component ---
-                        <DraggableDeliveryItem
-                          key={delivery.id}
-                          delivery={delivery}
-                        />
-                      ))}
-                    </Stack>
-                  </DataDisplayWrapper>
-                </Paper>
-              </Grid.Col>
+        <Box pos="relative" miw="100%">
+          <LoadingOverlay
+            visible={isLoading || isAddingStop || isUpdatingRoute}
+          />
+          {isError && (
+            <Alert color="red" title="Error">
+              Falha ao carregar dados de rota.
+            </Alert>
+          )}
 
-              {/* --- Routes Column --- */}
-              <Grid.Col span={8}>
+          <Box
+            style={{
+              display: 'flex',
+              gap: '16px',
+              overflowX: 'auto',
+              padding: '16px',
+              minHeight: '60vh',
+            }}
+          >
+            {/* Unassigned Deliveries Column */}
+            <Stack>
+              <Title order={4}>Entregas Não Atribuídas</Title>
+              <Paper
+                p="md"
+                withBorder
+                miw={300}
+                mih={400}
+                style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}
+              >
                 <Stack>
-                  <Group justify="space-between">
-                    <Title order={4}>Active Routes</Title>
-                    <Button
-                      leftSection={<IconPlus size={16} />}
-                      size="xs"
-                      onClick={openModal}
-                    >
-                      Create New Route
-                    </Button>
-                  </Group>
-
-                  <DataDisplayWrapper
-                    isLoading={isLoadingRoutes}
-                    error={routesError as Error | null}
-                  >
-                    <Stack gap="md">
-                      {routes?.length === 0 && (
-                        <Text c="dimmed" size="sm" ta="center" mt="xl">
-                          No routes created for this date.
-                        </Text>
-                      )}
-                      {routes?.map((route) => (
-                        // --- Use RouteCard Component ---
-                        <RouteCard
-                          key={route.id}
-                          route={route}
-                          dateQueryParam={dateQueryParam}
-                        />
-                      ))}
-                    </Stack>
-                  </DataDisplayWrapper>
+                  {unassignedDeliveries?.length === 0 && (
+                    <Text c="dimmed" ta="center" fz="sm">
+                      Nenhuma entrega pronta.
+                    </Text>
+                  )}
+                  {unassignedDeliveries?.map((delivery) => (
+                    <DraggableDeliveryItem
+                      key={delivery.id}
+                      delivery={delivery}
+                    />
+                  ))}
                 </Stack>
-              </Grid.Col>
-            </Grid>
+              </Paper>
+            </Stack>
+
+            {/* Route Cards */}
+            {routes?.map((route) => (
+              <RouteCard
+                key={route.id}
+                route={route}
+                // --- FIX: Removed 'unassignedDeliveries' prop ---
+                onUpdateRoute={updateRoute}
+                vehicles={vehicles || []}
+                drivers={drivers || []}
+              />
+            ))}
           </Box>
-        </DndContext>
+        </Box>
       </Stack>
-    </>
+
+      <CreateRouteModal
+        opened={createModalOpened}
+        onClose={closeCreateModal}
+        routeDate={selectedDate}
+        // --- FIX: Removed 'vehicles' and 'drivers' props ---
+        onSuccess={() => {
+          queryClient.invalidateQueries({
+            queryKey: ['routes', dateQueryParam],
+          });
+        }}
+      />
+    </DndContext>
   );
 }

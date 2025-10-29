@@ -1,14 +1,33 @@
-// PATH: app/components/MantineProvider.tsx
+// File: app/components/MantineProvider.tsx
 "use client";
 
+import { MantineProvider } from "@mantine/core";
+import { ModalsProvider } from "@mantine/modals";
+import { Notifications } from "@mantine/notifications";
 import { theme } from "@/lib/theme";
-import { MantineProvider as CoreMantineProvider } from "@mantine/core";
 
-export function MantineProvider({ children }: { children: React.ReactNode }) {
+// --- FIX: Import QueryClient ---
+import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+// ------------------------------
+
+export function AppMantineProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // --- FIX: Create a QueryClient instance ---
+  const [queryClient] = useState(() => new QueryClient());
+  // ----------------------------------------
+
   return (
-    // Correctly applies the theme object and sets dark mode default
-    <CoreMantineProvider theme={theme} defaultColorScheme="dark">
-      {children}
-    </CoreMantineProvider>
+    // --- FIX: Wrap everything in QueryClientProvider ---
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider theme={theme}>
+        <Notifications />
+        <ModalsProvider>{children}</ModalsProvider>
+      </MantineProvider>
+    </QueryClientProvider>
+    // -------------------------------------------------
   );
 }

@@ -1,4 +1,4 @@
-// PATH: app/dashboard/sales-pipeline/components/SalesPipelineBoard.tsx
+// File: app/dashboard/sales-pipeline/components/SalesPipelineBoard.tsx
 
 'use client';
 
@@ -17,7 +17,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import axios, { AxiosError } from 'axios';
-import { SalesPipelineClient } from '@/lib/types';
+// --- FIX: Import ApiResponse ---
+import { ApiResponse, SalesPipelineClient } from '@/lib/types';
+// -----------------------------
 import { IconExclamationCircle, IconFilter } from '@tabler/icons-react';
 import { SalesPipelineColumn } from './SalesPipelineColumn';
 // --- DND Imports ---
@@ -56,7 +58,15 @@ export function SalesPipelineBoard() {
     error,
   } = useQuery<SalesPipelineClient[]>({
     queryKey: ['companyClients', 'all'],
-    queryFn: () => axios.get('/api/company-clients').then((res) => res.data),
+    // --- FIX: Extract the 'data' property from the ApiResponse ---
+    queryFn: async () => {
+      const res = await axios.get<ApiResponse<SalesPipelineClient[]>>('/api/company-clients');
+      if (!res.data.success || !res.data.data) {
+        throw new Error(res.data.error || 'Failed to fetch clients');
+      }
+      return res.data.data; // Return the array
+    },
+    // -----------------------------------------------------------
   });
 
   // 2. Mutation for updating the client's sales stage
@@ -133,7 +143,7 @@ export function SalesPipelineBoard() {
 
   // Group clients by their sales stage
   const groupedClients =
-    clients?.reduce(
+    clients?.reduce( // <--- This will now work
       (acc, client) => {
         // --- FIX 2: Default null stages to 'LEAD' ---
         const stage = client.salesPipelineStage || 'LEAD';
