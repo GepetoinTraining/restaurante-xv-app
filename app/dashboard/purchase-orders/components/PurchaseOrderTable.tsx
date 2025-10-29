@@ -13,29 +13,41 @@ import {
   Button,
 } from "@mantine/core";
 import { IconTruckDelivery, IconEye } from "@tabler/icons-react";
-import { PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus, Supplier, User, Ingredient } from "@prisma/client";
+import {
+  PurchaseOrder,
+  PurchaseOrderItem,
+  POStatus, // Correct enum
+  Supplier,
+  User,
+  Ingredient,
+} from "@prisma/client";
 import { formatCurrency } from "@/lib/utils";
-import dayjs from 'dayjs';
-import 'dayjs/locale/pt-br';
+import dayjs from "dayjs";
+import "dayjs/locale/pt-br";
 
-dayjs.locale('pt-br');
+dayjs.locale("pt-br");
 
 // Type expected by this component (serialized data from API)
-export type SerializedPurchaseOrder = Omit<PurchaseOrder, 'totalAmount' | 'orderDate' | 'expectedDeliveryDate'> & {
-    totalAmount: string | null;
-    orderDate: string; // ISO string
-    expectedDeliveryDate: string | null; // ISO string
-    supplier: { name: string } | null;
-    createdBy: { name: string };
-    items: (Omit<PurchaseOrderItem, 'orderedQuantity' | 'receivedQuantity' | 'unitCost' | 'totalCost'> & {
-        orderedQuantity: string;
-        receivedQuantity: string | null;
-        unitCost: string;
-        totalCost: string;
-        ingredient: { name: string; unit: string };
-    })[];
+export type SerializedPurchaseOrder = Omit<
+  PurchaseOrder,
+  "totalAmount" | "orderDate" | "expectedDeliveryDate"
+> & {
+  totalAmount: string | null;
+  orderDate: string; // ISO string
+  expectedDeliveryDate: string | null; // ISO string
+  supplier: { name: string } | null;
+  createdBy: { name: string };
+  items: (Omit<
+    PurchaseOrderItem,
+    "orderedQuantity" | "receivedQuantity" | "unitCost" | "totalCost"
+  > & {
+    orderedQuantity: string;
+    receivedQuantity: string | null;
+    unitCost: string;
+    totalCost: string;
+    ingredient: { name: string; unit: string };
+  })[];
 };
-
 
 interface PurchaseOrderTableProps {
   data: SerializedPurchaseOrder[];
@@ -44,41 +56,67 @@ interface PurchaseOrderTableProps {
   // Add onEdit/onDelete later
 }
 
-const getStatusColor = (status: PurchaseOrderStatus) => {
-    switch(status) {
-        case PurchaseOrderStatus.PENDING: return 'gray';
-        case PurchaseOrderStatus.ORDERED: return 'blue';
-        case PurchaseOrderStatus.PARTIALLY_RECEIVED: return 'orange';
-        case PurchaseOrderStatus.RECEIVED: return 'green';
-        case PurchaseOrderStatus.CANCELLED: return 'red';
-        default: return 'dark';
-    }
-}
+const getStatusColor = (status: POStatus) => {
+  switch (status) {
+    case POStatus.DRAFT:
+      return "gray";
+    case POStatus.SUBMITTED:
+      return "blue";
+    case POStatus.APPROVED:
+      return "cyan"; // Added color for APPROVED
+    case POStatus.PARTIALLY_RECEIVED:
+      return "orange";
+    case POStatus.RECEIVED:
+      return "green";
+    case POStatus.CANCELLED:
+      return "red";
+    default:
+      return "dark";
+  }
+};
 
-export function PurchaseOrderTable({ data, isLoading, onReceive }: PurchaseOrderTableProps) {
+// --- FIX: Explicitly type the array as POStatus[] ---
+const receivableStatuses: POStatus[] = [
+  POStatus.SUBMITTED,
+  POStatus.PARTIALLY_RECEIVED,
+  POStatus.APPROVED,
+];
+// ----------------------------------------------------
+
+export function PurchaseOrderTable({
+  data,
+  isLoading,
+  onReceive,
+}: PurchaseOrderTableProps) {
   const rows = data.map((po) => {
     const totalAmountNum = po.totalAmount ? parseFloat(po.totalAmount) : 0;
-    const canReceive = [PurchaseOrderStatus.ORDERED, PurchaseOrderStatus.PARTIALLY_RECEIVED].includes(po.status);
+    
+    // --- FIX: Use the explicitly typed array for the .includes() check ---
+    const canReceive = receivableStatuses.includes(po.status);
 
     return (
       <Table.Tr key={po.id}>
         <Table.Td>
-            <Text fw={500}>{po.id.substring(0, 8)}...</Text> {/* Short ID */}
-            <Text size="xs" c="dimmed">{dayjs(po.orderDate).format('DD/MM/YYYY')}</Text>
+          <Text fw={500}>{po.id.substring(0, 8)}...</Text> {/* Short ID */}
+          <Text size="xs" c="dimmed">
+            {dayjs(po.orderDate).format("DD/MM/YYYY")}
+          </Text>
         </Table.Td>
         <Table.Td>{po.supplier?.name || "N/A"}</Table.Td>
         <Table.Td>{po.invoiceNumber || "N/A"}</Table.Td>
         <Table.Td>{po.items.length}</Table.Td>
         <Table.Td>
-            <Text fw={500}>{formatCurrency(totalAmountNum)}</Text>
+          <Text fw={500}>{formatCurrency(totalAmountNum)}</Text>
         </Table.Td>
         <Table.Td>
-            <Badge color={getStatusColor(po.status)} variant="light">
-                {po.status}
-            </Badge>
+          <Badge color={getStatusColor(po.status)} variant="light">
+            {po.status}
+          </Badge>
         </Table.Td>
         <Table.Td>
-            {po.expectedDeliveryDate ? dayjs(po.expectedDeliveryDate).format('DD/MM/YYYY') : 'N/A'}
+          {po.expectedDeliveryDate
+            ? dayjs(po.expectedDeliveryDate).format("DD/MM/YYYY")
+            : "N/A"}
         </Table.Td>
         <Table.Td>
           <Group gap="xs" wrap="nowrap">
@@ -94,12 +132,12 @@ export function PurchaseOrderTable({ data, isLoading, onReceive }: PurchaseOrder
                 Receber
               </Button>
             </Tooltip>
-             <Tooltip label="Ver Detalhes (Em breve)">
+            <Tooltip label="Ver Detalhes (Em breve)">
               <ActionIcon variant="subtle" color="blue" disabled>
                 <IconEye size={16} />
               </ActionIcon>
             </Tooltip>
-             {/* Add Edit/Cancel later */}
+            {/* Add Edit/Cancel later */}
           </Group>
         </Table.Td>
       </Table.Tr>
@@ -123,13 +161,21 @@ export function PurchaseOrderTable({ data, isLoading, onReceive }: PurchaseOrder
         </Table.Thead>
         <Table.Tbody>
           {isLoading ? (
-             <Table.Tr><Table.Td colSpan={8}><Center h={200}><Loader /></Center></Table.Td></Table.Tr>
+            <Table.Tr>
+              <Table.Td colSpan={8}>
+                <Center h={200}>
+                  <Loader />
+                </Center>
+              </Table.Td>
+            </Table.Tr>
           ) : rows.length > 0 ? (
             rows
           ) : (
             <Table.Tr>
               <Table.Td colSpan={8}>
-                <Text ta="center" c="dimmed" py="lg">Nenhuma ordem de compra encontrada.</Text>
+                <Text ta="center" c="dimmed" py="lg">
+                  Nenhuma ordem de compra encontrada.
+                </Text>
               </Table.Td>
             </Table.Tr>
           )}
