@@ -2,9 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-// --- START FIX: Corrected Enum imports ---
 import { PanShipment, PanStatus, DeliveryStatus, Prisma } from "@prisma/client";
-// --- END FIX ---
 import { Decimal } from "@prisma/client/runtime/library";
 import { getSession } from "@/lib/auth";
 
@@ -20,7 +18,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const deliveryId = searchParams.get("deliveryId");
-    const panId = searchParams.get("panId"); // Optional filter
+    const panId = searchParams.get("panId");
 
     if (!deliveryId && !panId) {
          return NextResponse.json<ApiResponse>({ success: false, error: "Requires deliveryId or panId filter" }, { status: 400 });
@@ -29,17 +27,12 @@ export async function GET(req: NextRequest) {
     try {
         const where: Prisma.PanShipmentWhereInput = {};
         if (deliveryId) where.deliveryId = deliveryId;
-        // --- START FIX: Corrected field name ---
         if (panId) where.servingPanId = panId;
-        // --- END FIX ---
 
         const shipments = await prisma.panShipment.findMany({
             where,
             include: {
-                // --- START FIX: Corrected relation name ---
                 servingPan: { include: { panModel: true } },
-                // recipe relation does not exist
-                // --- END FIX ---
             },
             orderBy: { outTimestamp: 'desc' },
         });
@@ -47,19 +40,15 @@ export async function GET(req: NextRequest) {
         // Serialize decimals
         const serializedShipments = shipments.map(s => ({
             ...s,
-            // --- START FIX: Use correct field names from schema ---
             outWeightGrams: s.outWeightGrams.toString(),
             inWeightGrams: s.inWeightGrams?.toString(),
             calculatedWasteGrams: s.calculatedWasteGrams?.toString(),
-            // --- END FIX ---
             servingPan: {
                 ...s.servingPan,
                 panModel: {
                     ...s.servingPan.panModel,
-                    // --- START FIX: Use correct field names from schema ---
                     capacityL: s.servingPan.panModel.capacityL?.toString(),
                     tareWeightG: s.servingPan.panModel.tareWeightG?.toString(),
-                    // --- END FIX ---
                 }
             }
         }));
@@ -84,9 +73,7 @@ export async function POST(req: NextRequest) {
     let requestBody: any;
     try {
         requestBody = await req.json();
-        // --- START FIX: Use correct field names ---
         const { deliveryId, uniqueIdentifier, recipeGuess, outWeightGrams } = requestBody;
-        // --- END FIX ---
 
         if (!deliveryId || !uniqueIdentifier || !outWeightGrams) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Delivery ID, Pan Identifier, and Outbound Weight are required" }, { status: 400 });
@@ -94,9 +81,7 @@ export async function POST(req: NextRequest) {
 
         let outboundWeightDecimal: Decimal;
         try {
-            // --- START FIX: Use outWeightGrams ---
             outboundWeightDecimal = new Decimal(outWeightGrams);
-            // --- END FIX ---
              if (outboundWeightDecimal.isNegative()) throw new Error();
         } catch {
              return NextResponse.json<ApiResponse>({ success: false, error: "Invalid Outbound Weight format" }, { status: 400 });
@@ -111,12 +96,9 @@ export async function POST(req: NextRequest) {
             });
             if (!pan) throw new Error(`Serving Pan with identifier ${uniqueIdentifier} not found.`);
             
-            // --- START FIX: Use correct PanStatus enum ---
             if (pan.status !== PanStatus.AVAILABLE) {
                  console.warn(`Pan ${uniqueIdentifier} is being shipped with status ${pan.status}`);
-                 // Allow shipping anyway
             }
-            // --- END FIX ---
 
             // 2. Find the delivery
             const delivery = await tx.delivery.findUnique({ where: { id: deliveryId } });
@@ -126,33 +108,28 @@ export async function POST(req: NextRequest) {
             const shipment = await tx.panShipment.create({
                 data: {
                     deliveryId: deliveryId,
-                    servingPanId: pan.id, // Corrected field name
-                    recipeGuess: recipeGuess || null, // Corrected field name
-                    outWeightGrams: outboundWeightDecimal, // Corrected field name
+                    servingPanId: pan.id,
+                    recipeGuess: recipeGuess || null,
+                    outWeightGrams: outboundWeightDecimal,
                     outTimestamp: new Date(),
-                    // --- START FIX (ts(2353)): Removed 'notes' as it's not in the schema ---
-                    // notes,
-                    // --- END FIX ---
                 },
             });
 
             // 4. Update Pan Status to IN_USE
             await tx.servingPan.update({
                 where: { id: pan.id },
-                // --- START FIX: Use correct PanStatus enum ---
                 data: { status: PanStatus.IN_USE }
-                // --- END FIX ---
             });
 
             // 5. Update Delivery Status to OUT_FOR_DELIVERY (if not already)
-            // --- START FIX (ts(2345)): Use correct DeliveryStatus enums ---
-             if ([DeliveryStatus.PENDING, DeliveryStatus.READY_FOR_DISPATCH].includes(delivery.status)) {
+            // --- START FIX (ts(2345)): Use direct || comparison instead of .includes ---
+             if (delivery.status === DeliveryStatus.PENDING || delivery.status === DeliveryStatus.READY_FOR_DISPATCH) {
+            // --- END FIX ---
                  await tx.delivery.update({
                     where: { id: deliveryId },
                     data: { status: DeliveryStatus.OUT_FOR_DELIVERY }
                 });
              }
-            // --- END FIX ---
 
             // Return shipment with pan data for serialization
             return { ...shipment, servingPan: pan };
@@ -162,7 +139,6 @@ export async function POST(req: NextRequest) {
         // Serialize
         const serializedShipment = {
              ...newShipment,
-            // --- START FIX: Use correct field names ---
             outWeightGrams: newShipment.outWeightGrams.toString(),
             servingPan: {
                 ...newShipment.servingPan,
@@ -172,7 +148,6 @@ export async function POST(req: NextRequest) {
                     tareWeightG: newShipment.servingPan.panModel.tareWeightG?.toString(),
                 }
             }
-            // --- END FIX ---
         };
 
         return NextResponse.json<ApiResponse<any>>({ success: true, data: serializedShipment }, { status: 201 });
