@@ -5,12 +5,12 @@ import "./globals.css";
 
 import React from "react";
 import { ColorSchemeScript } from "@mantine/core";
-import { MantineProvider } from "./components/MantineProvider";
+import { AppMantineProvider } from "./components/MantineProvider";
 import { Notifications } from "@mantine/notifications"; // Import Notifications
 
 export const metadata = {
-  title: "Acaia",
-  description: "Acaia Menu & Dashboard",
+  title: "Restaurante Espaço XV",
+  description: "Sistema de Gestão",
 };
 
 export default function RootLayout({
@@ -35,10 +35,10 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <MantineProvider>
+        <AppMantineProvider>
           <Notifications position="top-right" />
           {children}
-        </MantineProvider>
+        </AppMantineProvider>
       </body>
     </html>
   );

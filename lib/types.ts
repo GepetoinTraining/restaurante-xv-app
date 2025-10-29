@@ -327,11 +327,12 @@ export type DeliveryWithClient = Delivery & {
   routeStop: { id: string; routeId: string } | null;
 };
 
-// Type for a single stop, returned as part of a route
+
+// Type for the full route object returned by GET /api/routes
 export type RouteStopWithDelivery = RouteStop & {
-  delivery: Delivery & {
-    companyClient: Pick<CompanyClient, 'id' | 'companyName' | 'addressStreet'>;
-  };
+  // --- FIX: Change 'delivery' to use the full 'DeliveryWithClient' type ---
+  delivery: DeliveryWithClient;
+  // ----------------------------------------------------------------------
 };
 
 // Type for the full route object returned by GET /api/routes
