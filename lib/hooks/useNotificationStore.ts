@@ -4,7 +4,7 @@
 import { useLocalStorage } from "@mantine/hooks";
 import { 
   notifications as mantineNotifications, 
-  NotificationProps 
+  NotificationData as NotificationsProps 
 } from "@mantine/notifications";
 
 // Define the shape of our stored item
@@ -27,7 +27,7 @@ export function useNotificationStore() {
    * Shows a real-time notification AND adds it to the persistent history.
    * This function takes the exact same object as mantineNotifications.show()
    */
-  const addNotification = (props: NotificationProps) => {
+  const addNotification = (props: NotificationsProps) => {
     // 1. Show the real-time "faded" toast notification
     mantineNotifications.show(props);
 
