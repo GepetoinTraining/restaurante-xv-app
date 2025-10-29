@@ -46,7 +46,7 @@ export default function SettingsPage() {
             </Text>
             <PillCalendar data={mockCalendarData} />
           </Paper>
-          <CombinedCalendar data={mockCalendarData} />
+          <CombinedCalendar/>
           </Grid.Col>
           </Grid>
 
