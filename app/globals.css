@@ -1,6 +1,7 @@
 /* PATH: app/globals.css */
 /* Import Mantine's base styles */
 @import '@mantine/core/styles.css';
+@import '@mantine/dates/styles.css';
 
 /* Optional: Import Montserrat font from Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
