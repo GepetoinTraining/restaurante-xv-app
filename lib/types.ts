@@ -1,7 +1,7 @@
 // PATH: lib/types.ts
 import {
   Client,
-  /* Partner, */ PrismaProduct,
+  /* Partner, */ Product as PrismaProduct, // <-- FIX: Import 'Product' and rename it
   User,
   /* StaffCommission, */ Visit,
   // ---- START FIX ----
@@ -25,12 +25,11 @@ import {
   WalletTransaction, // Added WalletTransaction here for ClientWalletStringBalance
   VenueObjectType, // Added VenueObjectType
   PrepTaskStatus,
-  servingPan,
+  ServingPan,
   BuffetStation,
   CompanyClient,
   Delivery,
   PanShipment,
-  ServingPan,
   ServingPanModel,
   // Delivery, // Duplicate import removed
   Route,
@@ -43,7 +42,7 @@ import {
 
 // --- Client-side Product type with string prices ---
 // Type representing Product after Decimal fields are converted to strings FOR API RESPONSE
-export type Product = Omit<PrismaProduct, 'price'> & {
+export type Product = Omit<PrismaProduct, 'price'> & { // <-- FIX: This now correctly uses the imported 'PrismaProduct' alias
   price: string; // Price is a string from the API
   prepStation: Workstation; // Include prep station
 };
@@ -94,7 +93,7 @@ type OrderItemWithProductStringPrice = Omit<
   unitPrice: string;
   totalPrice: string;
   // Ensure product is defined correctly, including its string price
-  product: Omit<PrismaProduct, 'price'> & { price: string };
+  product: Omit<PrismaProduct, 'price'> & { price: string }; // <-- FIX: Use 'PrismaProduct' alias
 };
 
 // Type for Order including items and handler (with string total)
@@ -288,7 +287,7 @@ export type SerializedWalletTransaction = Omit<WalletTransaction, 'amount'> & {
 };
 
 export type SerializedservingPan = Omit<
-  servingPan,
+  ServingPan,
   'currentQuantity' | 'capacity'
 > & {
   currentQuantity: string;
