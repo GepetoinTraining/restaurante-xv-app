@@ -7,8 +7,7 @@ import {
     BuffetStation, 
     ServingPan, 
     Ingredient, 
-    Prisma,
-    SortOrder // <-- *** ADD THIS IMPORT ***
+    Prisma // <-- 'SortOrder' is removed from here
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -34,9 +33,9 @@ const stationInclude = {
                 },
             },
         },
-        // --- *** FIX: Use SortOrder.asc instead of 'asc' *** ---
+        // --- *** FIX: Use Prisma.SortOrder.asc *** ---
         orderBy: {
-            uniqueIdentifier: SortOrder.asc,
+            uniqueIdentifier: Prisma.SortOrder.asc,
         },
     },
 };
@@ -55,7 +54,6 @@ type PanWithIngredient = Prisma.ServingPanGetPayload<{
 }>;
 
 // 3. Define the type for a station as returned by the include
-//    This type definition should now be valid
 type StationWithPansPayload = Prisma.BuffetStationGetPayload<{
     include: typeof stationInclude;
 }>;
