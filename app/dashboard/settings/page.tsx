@@ -6,7 +6,7 @@ import { PageHeader } from '../../../components/ui/PageHeader'; // Use the UI li
 import { useDisclosure } from '@mantine/hooks';
 import { ViewSettingsModal } from './components/ViewSettingsModal';
 import { PillCalendar, PillEvent } from '../../../components/ui/PillCalendar'; // Import the new calendar
-import { CombinedCalendar } from '../../../components/ui/CombinedCalendar'; // Import the combined calendar view
+import CombinedCalendar from '../../../components/ui/CombinedCalendar'; // Import the combined calendar view
 import dayjs from 'dayjs';
 import { PlusCircleIcon } from 'lucide-react';
 
