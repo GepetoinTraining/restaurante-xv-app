@@ -1,157 +1,168 @@
 // PATH: app/dashboard/reports/page.tsx
-"use client";
+'use client';
 
-import { Container, Stack, Alert, Box, Text } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import {
+  Alert,
+  Box,
+  LoadingOverlay,
+  Paper,
+  SegmentedControl,
+  Tabs,
+  Title,
+  Text,
+} from "@mantine/core";
 import {
   QueryClient,
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { DatePickerInput, DatesRangeValue } from "@mantine/dates";
+import { DatePickerInput, DateValue } from "@mantine/dates";
 import { useState } from "react";
 import { IconAlertCircle } from "@tabler/icons-react";
-import "dayjs/locale/pt-br";
+import { subDays } from "date-fns";
 import { SalesReport } from "./components/SalesReport";
 // Import the new cost report type
 import { SalesReportResponse } from "@/app/api/reports/sales/route";
-import { CostReportResponse } from "../../../app/api/reports/costs/route"; // <-- Import Cost Report type
-import { ApiResponse } from "@/lib/types";
+
+// --- FIX: Import CostReportResponse from its API route ---
+import { CostReportResponse } from "@/app/api/reports/costs/route";
+import { ApiResponse, FinancialReport } from "@/lib/types"; // FinancialReport is no longer needed here for the query
+import { FinancialReportDisplay } from "../financials/components/FinancialReportDisplay";
+// ----------------------------------------------------------------
 
 // Create a client
 const queryClient = new QueryClient();
 
-// Helper to fetch sales report data
-const fetchSalesReport = async (
-  startDate: Date,
-  endDate: Date
-): Promise<SalesReportResponse> => {
-  const params = new URLSearchParams({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+function ReportsPageContent() {
+  const [activeTab, setActiveTab] = useState<string | null>("sales");
+  const [dateRange, setDateRange] = useState<[DateValue, DateValue]>([
+    subDays(new Date(), 7),
+    new Date(),
+  ]);
+
+  const from = dateRange[0]?.toISOString() || "";
+  const to = dateRange[1]?.toISOString() || "";
+
+  // Query for Sales Report
+  const {
+    data: salesReportData,
+    isLoading: isLoadingSales,
+    isError: isErrorSales,
+    error: salesError,
+    refetch: refetchSalesReport,
+  } = useQuery<ApiResponse<SalesReportResponse>>({
+    queryKey: ['salesReport', from, to],
+    queryFn: () =>
+      fetch(`/api/reports/sales?from=${from}&to=${to}`)
+        .then((res) => res.json()),
+    enabled: !!(from && to && activeTab === 'sales'), // Only fetch if tab is active
   });
-  const response = await fetch(`/api/reports/sales?${params.toString()}`);
-  const data: ApiResponse<SalesReportResponse> = await response.json();
-  if (data.success && data.data) {
-    return data.data;
-  }
-  throw new Error(data.error || "Failed to fetch sales report");
-};
 
-// Helper to fetch cost report data
-const fetchCostReport = async (
-  startDate: Date,
-  endDate: Date
-): Promise<CostReportResponse> => {
-  const params = new URLSearchParams({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+  // Query for Cost Report
+  const {
+    data: costReportData,
+    isLoading: isLoadingCost,
+    isError: isErrorCost,
+    error: costError,
+    refetch: refetchCostReport,
+    // --- FIX: Use the correct CostReportResponse type ---
+  } = useQuery<ApiResponse<CostReportResponse>>({
+    queryKey: ['costReport', from, to],
+    queryFn: () =>
+      // --- FIX: Use the correct API route ---
+      fetch(`/api/reports/costs?from=${from}&to=${to}`)
+        .then((res) => res.json()),
+    enabled: !!(from && to && activeTab === 'costs'), // Only fetch if tab is active
   });
-  // Use the new endpoint
-  const response = await fetch(`/api/reports/costs?${params.toString()}`);
-  const data: ApiResponse<CostReportResponse> = await response.json();
-  if (data.success && data.data) {
-    return data.data;
-  }
-  throw new Error(data.error || "Failed to fetch cost report");
-};
 
+  const handleDateChange = (range: [DateValue, DateValue]) => {
+    setDateRange(range);
+    // Refetch active tab's data
+    if (activeTab === 'sales') {
+      refetchSalesReport();
+    } else if (activeTab === 'costs') {
+      refetchCostReport();
+    }
+  };
 
-// Main component wrapped in QueryClientProvider
-export default function ReportsPageWrapper() {
+  const isLoading = isLoadingSales || isLoadingCost;
+  const isError = isErrorSales || isErrorCost;
+  const error = salesError || costError;
+
+  // --- FIX: Use the correct CostReportResponse type ---
+  const salesReport: SalesReportResponse | undefined = salesReportData?.data;
+  const costReport: CostReportResponse | undefined = costReportData?.data;
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <ReportsPage />
-    </QueryClientProvider>
+    <>
+      <PageHeader
+        title="Relatórios"
+        actionButton={
+          <DatePickerInput
+            type="range"
+            label="Período"
+            placeholder="Selecione o período"
+            value={dateRange}
+            onChange={handleDateChange}
+            maw={300}
+            clearable={false}
+          />
+        }
+      />
+
+      <Tabs value={activeTab} onChange={setActiveTab} mt="md">
+        <Tabs.List>
+          <Tabs.Tab value="sales">Relatório de Vendas</Tabs.Tab>
+          <Tabs.Tab value="costs">Relatório de Custos</Tabs.Tab>
+        </Tabs.List>
+
+        <Box pos="relative" pt="md">
+          <LoadingOverlay
+            visible={isLoading}
+            zIndex={1000}
+            overlayProps={{ radius: "sm", blur: 2 }}
+          />
+
+          {isError && (
+            <Alert
+              color="red"
+              title="Erro ao carregar relatório"
+              icon={<IconAlertCircle />}
+            >
+              {(error as Error)?.message ||
+                "Não foi possível carregar os dados do relatório."}
+            </Alert>
+          )}
+
+          <Tabs.Panel value="sales">
+            {salesReport && !isLoading && !isError && (
+              <SalesReport data={salesReport} />
+            )}
+            {!salesReport && !isLoading && !isError && (
+              <Text c="dimmed">Nenhum dado de vendas para este período.</Text>
+            )}
+          </Tabs.Panel>
+
+          <Tabs.Panel value="costs">
+            {/* --- FIX: Cast costReport to FinancialReport if component expects it --- */}
+            {costReport && !isLoading && !isError && (
+              <FinancialReportDisplay report={costReport as FinancialReport} />
+            )}
+            {!costReport && !isLoading && !isError && (
+              <Text c="dimmed">Nenhum dado de custos para este período.</Text>
+            )}
+          </Tabs.Panel>
+        </Box>
+      </Tabs>
+    </>
   );
 }
 
-// The actual page content
-function ReportsPage() {
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
-    new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-    new Date(), // Today
-  ]);
-
-  const [startDate, endDate] = dateRange;
-
-  // --- useQuery for Sales Data ---
-  const {
-      data: salesData,
-      error: salesError,
-      isLoading: isLoadingSales,
-      isError: isSalesError,
-      isFetching: isFetchingSales
-    } = useQuery<SalesReportResponse>({
-      queryKey: ["salesReport", dateRange],
-      queryFn: () => fetchSalesReport(startDate!, endDate!),
-      enabled: !!startDate && !!endDate,
-    });
-
-  // --- useQuery for Cost Data ---
-  const {
-      data: costData,
-      error: costError,
-      isLoading: isLoadingCosts,
-      isError: isCostsError,
-      isFetching: isFetchingCosts
-    } = useQuery<CostReportResponse>({
-      // Use a different query key for costs
-      queryKey: ["costReport", dateRange],
-      queryFn: () => fetchCostReport(startDate!, endDate!),
-      enabled: !!startDate && !!endDate,
-    });
-
-  const handleDateChange = (value: DatesRangeValue) => {
-    const [start, end] = value;
-    setDateRange([
-        start ? new Date(start) : null,
-        end ? new Date(end) : null
-    ]);
-  };
-
-  // Combine loading and error states
-  const isLoading = isLoadingSales || isLoadingCosts || isFetchingSales || isFetchingCosts;
-  const isError = isSalesError || isCostsError;
-  const error = salesError || costError;
-
-
+export default function ReportsPage() {
   return (
-    <Container fluid>
-      <Stack gap="lg">
-        <PageHeader title="Relatórios" />
-        <Alert
-          variant="light"
-          color="blue"
-          title="Relatórios de Vendas e Custos"
-          icon={<IconAlertCircle />}
-        >
-          Selecione um período para gerar os relatórios. Vendas incluem apenas pedidos
-          com status "Entregue" ou "Pronto". Custos são calculados com base em preparos concluídos, perdas registradas e pratos de buffet pesados.
-        </Alert>
-
-        <Box w={{ base: "100%", md: 400 }}>
-          <DatePickerInput
-            type="range"
-            label="Selecione o Período"
-            placeholder="DD/MM/YYYY - DD/MM/YYYY"
-            value={dateRange}
-            onChange={handleDateChange}
-            locale="pt-br"
-            clearable
-          />
-        </Box>
-
-        {/* Display Report, Loading, or Error */}
-        {/* Pass both sales and cost data to the component */}
-        <SalesReport
-          salesData={salesData}
-          costData={costData} // Pass cost data
-          isLoading={isLoading}
-          isError={isError}
-          error={error as Error | null}
-        />
-      </Stack>
-    </Container>
+    <QueryClientProvider client={queryClient}>
+      <ReportsPageContent />
+    </QueryClientProvider>
   );
 }
