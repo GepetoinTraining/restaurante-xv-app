@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { getSession } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-import { BuffetStation, ServingPan, Ingredient, Prisma } from "@prisma/client";
+import { 
+    BuffetStation, 
+    ServingPan, 
+    Ingredient, 
+    Prisma,
+    SortOrder // <-- *** ADD THIS IMPORT ***
+} from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
 // Define the expected response structure including pans and ingredients
@@ -28,8 +34,9 @@ const stationInclude = {
                 },
             },
         },
+        // --- *** FIX: Use SortOrder.asc instead of 'asc' *** ---
         orderBy: {
-            uniqueIdentifier: 'asc',
+            uniqueIdentifier: SortOrder.asc,
         },
     },
 };
@@ -48,6 +55,7 @@ type PanWithIngredient = Prisma.ServingPanGetPayload<{
 }>;
 
 // 3. Define the type for a station as returned by the include
+//    This type definition should now be valid
 type StationWithPansPayload = Prisma.BuffetStationGetPayload<{
     include: typeof stationInclude;
 }>;
@@ -74,10 +82,10 @@ export async function GET(req: NextRequest) {
         });
 
         // Serialize Decimal/Float fields
-        // --- FIX: Apply 'StationWithPansPayload' type to 'station' ---
+        // Apply 'StationWithPansPayload' type to 'station'
         const serializedStations: BuffetStationWithPans[] = stations.map((station: StationWithPansPayload) => ({
             ...station,
-            // --- FIX: Apply 'PanWithIngredient' type to 'pan' ---
+            // Apply 'PanWithIngredient' type to 'pan'
             pans: station.pans.map((pan: PanWithIngredient) => ({
                 ...pan,
                 currentQuantity: pan.currentQuantity.toString(),
