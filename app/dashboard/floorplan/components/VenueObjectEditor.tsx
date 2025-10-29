@@ -9,6 +9,7 @@ import {
   LoadingOverlay,
   useMantineTheme,
   Text,
+  // 1. Import useMantineColorScheme
   useMantineColorScheme,
 } from "@mantine/core";
 import {
@@ -18,6 +19,8 @@ import {
   useDroppable,
   UniqueIdentifier,
   Active,
+  // 2. Import DragStartEvent
+  DragStartEvent,
 } from "@dnd-kit/core";
 import { notifications } from "@mantine/notifications";
 import { FloorPlanPalette } from "./FloorPlanPalette";
@@ -53,10 +56,12 @@ function FloorPlanCanvas({
   });
 
   const theme = useMantineTheme();
+  // 3. Get color scheme from the hook
   const { colorScheme } = useMantineColorScheme();
 
   const background = imageUrl
     ? `url(${imageUrl})`
+    // 4. Use the colorScheme variable
     : colorScheme === "dark"
     ? theme.colors.dark[7]
     : theme.colors.gray[1];
@@ -86,7 +91,13 @@ function FloorPlanCanvas({
 export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
   const [activeDragItem, setActiveDragItem] = useState<Active | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const canvasRef = useRef<HTMLDivElement>(null); // Ref for coordinate calculation
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // 5. State to store drag start coordinates
+  const [dragStartCoords, setDragStartCoords] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Modal state
   const [modalOpened, { open: openModal, close: closeModal }] =
@@ -109,8 +120,6 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
         body: JSON.stringify({ anchorX: newX, anchorY: newY }),
       });
       if (!res.ok) throw new Error("Failed to update position");
-      // No need to refresh, optimistic update already happened
-      // We just need to trigger the parent's refresh
       onRefresh();
     } catch (error) {
       notifications.show({
@@ -118,7 +127,6 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
         message: "Falha ao salvar a nova posição.",
         color: "red",
       });
-      // Revert change (by refreshing)
       onRefresh();
     } finally {
       setIsSubmitting(false);
@@ -138,7 +146,7 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
         message: "Objeto excluído.",
         color: "green",
       });
-      onRefresh(); // Refresh to show deletion
+      onRefresh();
     } catch (error) {
       notifications.show({
         title: "Erro",
@@ -166,15 +174,37 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
     });
   };
 
-  // Handle drag start
-  const handleDragStart = (event: { active: Active }) => {
+  // 6. Handle drag start (using 'as any' to bypass type error)
+  const handleDragStart = (event: DragStartEvent) => {
     setActiveDragItem(event.active);
+    
+    // --- FIX: Cast to 'any' to bypass complex event type ---
+    const activatorEvent = event.activatorEvent as any; 
+
+    // Check if it's a TouchEvent
+    if (activatorEvent && activatorEvent.touches) {
+      setDragStartCoords({
+        x: activatorEvent.touches[0].clientX,
+        y: activatorEvent.touches[0].clientY,
+      });
+    } 
+    // Check if it's a MouseEvent
+    else if (activatorEvent && activatorEvent.clientX !== undefined) {
+      setDragStartCoords({
+        x: activatorEvent.clientX,
+        y: activatorEvent.clientY,
+      });
+    }
   };
 
-  // Handle drag end (the core logic)
+  // 7. Handle drag end (using coordinates from state)
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDragItem(null);
     const { active, over, delta } = event;
+
+    // Get coords from state and reset
+    const startCoords = dragStartCoords;
+    setDragStartCoords(null);
 
     // Not dropped on canvas, do nothing
     if (!over || over.id !== "floor-plan-canvas") return;
@@ -183,20 +213,14 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
 
     if (dragType === "PALETTE_ITEM") {
       // --- CASE 1: Dropped a NEW item from the palette ---
-
-      // Get canvas bounding box
       const canvasRect = canvasRef.current?.getBoundingClientRect();
-      if (!canvasRect) return;
+      
+      // Check for canvasRect AND startCoords
+      if (!canvasRect || !startCoords) return;
 
       // Calculate drop position relative to the canvas
-      // 'event.activatorEvent' holds the initial MouseEvent/PointerEvent
-      // We use its 'clientX/Y' as the starting point
-      const startX = (event.activatorEvent as MouseEvent).clientX ?? 0;
-      const startY = (event.activatorEvent as MouseEvent).clientY ?? 0;
-
-      // Add the delta to get the final drop position
-      const dropX = startX - canvasRect.left + delta.x;
-      const dropY = startY - canvasRect.top + delta.y;
+      const dropX = startCoords.x - canvasRect.left + delta.x;
+      const dropY = startCoords.y - canvasRect.top + delta.y;
 
       const objectType = active.data.current?.objectType as VenueObjectType;
       const label = active.data.current?.label as string;
@@ -220,10 +244,6 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
       const newX = Math.round(originalX + delta.x);
       const newY = Math.round(originalY + delta.y);
 
-      // Optimistic UI update (feels faster)
-      // The parent `floorPlan.objects` will update onRefresh
-
-      // Call API to save new position
       updateObjectPosition(objectId, newX, newY);
     }
   };
@@ -231,7 +251,7 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
   // Callback for when the modal saves
   const handleModalSuccess = (newObject: FullVenueObject) => {
     closeModal();
-    onRefresh(); // Refresh the whole plan to show the new/edited object
+    onRefresh();
   };
 
   return (
@@ -250,7 +270,7 @@ export function VenueObjectEditor({ floorPlan, onRefresh }: Props) {
               imageUrl={floorPlan.imageUrl}
             >
               {/* Render all existing objects */}
-              {floorPlan.objects.map((obj) (
+              {floorPlan.objects.map((obj) => (
                 <DraggableVenueObject
                   key={obj.id}
                   object={obj}
