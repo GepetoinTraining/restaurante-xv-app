@@ -1,12 +1,14 @@
 // PATH: app/dashboard/settings/page.tsx
 'use client';
 
-import { Container, Title, Text, Paper, Stack, Button } from '@mantine/core';
+import { Container, Title, Text, Paper, Stack, Button, Grid } from '@mantine/core';
 import { PageHeader } from '../../../components/ui/PageHeader'; // Use the UI library header
 import { useDisclosure } from '@mantine/hooks';
 import { ViewSettingsModal } from './components/ViewSettingsModal';
 import { PillCalendar, PillEvent } from '../../../components/ui/PillCalendar'; // Import the new calendar
+import { CombinedCalendar } from '../../../components/ui/CombinedCalendar'; // Import the combined calendar view
 import dayjs from 'dayjs';
+import { PlusCircleIcon } from 'lucide-react';
 
 // Mock data for the calendar
 const mockCalendarData: Record<string, PillEvent[]> = {
@@ -35,6 +37,8 @@ export default function SettingsPage() {
           />
           
           {/* Calendar Card */}
+          <Grid grow mt="lg">
+          <Grid.Col span={2}>
           <Paper withBorder p="xl" mt="lg">
             <Title order={3}>Calendário de Eventos</Title>
             <Text c="dimmed" mt="md" mb="lg">
@@ -42,6 +46,9 @@ export default function SettingsPage() {
             </Text>
             <PillCalendar data={mockCalendarData} />
           </Paper>
+          <CombinedCalendar data={mockCalendarData} />
+          </Grid.Col>
+          </Grid>
 
           {/* Preferences Card */}
           <Paper withBorder p="xl" mt="lg">

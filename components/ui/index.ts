@@ -20,3 +20,4 @@ export { StandardDropzone } from './StandardDropzone';
 export { DailyMenuManager } from './DailyMenuManager'; // <-- Added
 export { PillCalendar } from './PillCalendar';
 export type { PillEvent } from './PillCalendar';
+export { CombinedCalendarView } from './CombinedCalendar'; // <-- Added
