@@ -50,7 +50,7 @@ function BuffetStatusContent() {
             {/* ---- START FIX ---- */}
             <PageHeader 
                 title="Status do Buffet"
-                actionButton={
+                rightSection={  // <--- This is the correct prop name
                     <Button onClick={handleRefresh} variant="light" loading={isLoading}>
                         Atualizar
                     </Button>

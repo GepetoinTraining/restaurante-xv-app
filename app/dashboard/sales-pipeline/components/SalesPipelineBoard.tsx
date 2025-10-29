@@ -10,6 +10,7 @@ import {
   Stack,
   Text,
   Title,
+  Button,
 } from '@mantine/core';
 import {
   useMutation,
@@ -20,7 +21,7 @@ import axios, { AxiosError } from 'axios';
 // --- FIX: Import ApiResponse ---
 import { ApiResponse, SalesPipelineClient } from '@/lib/types';
 // -----------------------------
-import { IconExclamationCircle, IconFilter } from '@tabler/icons-react';
+import { IconExclamationCircle, IconFilter, IconPlus } from '@tabler/icons-react';
 import { SalesPipelineColumn } from './SalesPipelineColumn';
 // --- DND Imports ---
 import {
@@ -175,6 +176,13 @@ export function SalesPipelineBoard() {
             minHeight: '60vh', // Ensure columns have height
           }}
         >
+          <Button
+          leftSection={<IconPlus size={14} />}
+          onClick={handleOpenCreateModal}
+          w={200}
+        >
+          Novo Cliente B2B
+        </Button>
           {pipelineStagesV2.map((stage) => (
             <SalesPipelineColumn
               key={stage.id}
