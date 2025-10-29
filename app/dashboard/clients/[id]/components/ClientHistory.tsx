@@ -9,7 +9,7 @@ import {
   IconShoppingCart,
   IconWallet,
 } from "@tabler/icons-react";
-import { ClientDetailsResponse } from "../page";
+import { ClientDetailsResponse } from "../page"; // Assuming this type is defined correctly
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatCurrency } from "@/lib/utils";
@@ -40,7 +40,7 @@ export function ClientHistory({ client }: ClientHistoryProps) {
           </Text>
         ) : (
           <Accordion variant="separated">
-            {client.visits.map((visit: any) => (
+            {client.visits.map((visit: any) => ( // Consider adding a Visit type
               <Accordion.Item value={visit.id} key={visit.id}>
                 <Accordion.Control>
                   <Group justify="space-between">
@@ -62,7 +62,7 @@ export function ClientHistory({ client }: ClientHistoryProps) {
                     Pedidos ({visit.orders.length})
                   </Title>
                   {visit.orders.length === 0 ? (
-                     <Text c="dimmed" size="sm">Nenhum pedido nesta visita.</Text>
+                    <Text c="dimmed" size="sm">Nenhum pedido nesta visita.</Text>
                   ) : (
                     <Table>
                       <Table.Thead>
@@ -73,7 +73,7 @@ export function ClientHistory({ client }: ClientHistoryProps) {
                          </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
-                        {visit.orders.map((order: any) => (
+                        {visit.orders.map((order: any) => ( // Consider adding an Order type
                           <Table.Tr key={order.id}>
                             <Table.Td>
                               {format(new Date(order.createdAt), "HH:mm", {
@@ -111,7 +111,7 @@ export function ClientHistory({ client }: ClientHistoryProps) {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {client.wallet.transactions.map((tx: any) => (
+              {client.wallet.transactions.map((tx: any) => ( // Consider adding a Transaction type
                 <Table.Tr key={tx.id}>
                   <Table.Td>
                     {format(new Date(tx.createdAt), "dd/MM/yy HH:mm", {
@@ -119,12 +119,16 @@ export function ClientHistory({ client }: ClientHistoryProps) {
                     })}
                   </Table.Td>
                   <Table.Td>
-                    {tx.type === TransactionType.TOP_UP ? "Recarga" : "Gasto"}
+                    {/* --- START FIX: Use DEPOSIT instead of TOP_UP --- */}
+                    {tx.type === TransactionType.DEPOSIT ? "Recarga" : "Gasto"}
+                    {/* --- END FIX --- */}
                   </Table.Td>
                   <Table.Td>
                     <Text
                       c={
-                        tx.type === TransactionType.TOP_UP ? "green" : "red"
+                        // --- START FIX: Use DEPOSIT instead of TOP_UP ---
+                        tx.type === TransactionType.DEPOSIT ? "green" : "red"
+                        // --- END FIX ---
                       }
                       fw={500}
                     >

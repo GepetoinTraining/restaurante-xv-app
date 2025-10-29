@@ -1,130 +1,164 @@
 // PATH: app/dashboard/buffet-status/components/RefillPanModal.tsx
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { Modal, Button, Stack, LoadingOverlay, Select, NumberInput, Text, Title, Alert } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { useState, useEffect } from 'react';
+import { Modal, Button, Select, NumberInput, Group, Text, Alert } from '@mantine/core';
+import { useForm } from '@mantine/form';
 import { notifications } from "@mantine/notifications";
 import { ApiResponse, StorageLocation } from "@/lib/types";
-import { servingPan } from "@prisma/client"; // Import base type
+import { ServingPan } from "@prisma/client"; // Import base type
 
 // Type matching the pan passed from BuffetStationDisplay
-type PanToRefill = (Omit<servingPan, 'currentQuantity' | 'capacity'> & {
-        currentQuantity: string;
-        capacity: string;
-        ingredient: { id: string; name: string; unit: string; } | null;
- });
+type PanToRefill = (Omit<ServingPan, 'currentQuantity' | 'capacity'> & {
+    currentQuantity: string; // Serialized
+    capacity: string | null;  // Serialized
+    ingredient: {
+        id: string;
+        name: string;
+        unit: string;
+    } | null;
+});
 
 interface RefillPanModalProps {
-    opened: boolean;
-    onClose: () => void;
-    onSuccess: () => void;
-    pan: PanToRefill | null;
-    locations: StorageLocation[];
+  opened: boolean;
+  onClose: () => void;
+  pan: PanToRefill | null;
+  onRefillSuccess: (updatedPan: any) => void;
 }
 
-export function RefillPanModal({
-    opened,
-    onClose,
-    onSuccess,
-    pan,
-    locations,
-}: RefillPanModalProps) {
-    const [isSubmitting, setIsSubmitting] = useState(false);
+export function RefillPanModal({ opened, onClose, pan, onRefillSuccess }: RefillPanModalProps) {
+  const [storageLocations, setStorageLocations] = useState<{ label: string; value: string; }[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    const form = useForm({
-        initialValues: {
-            quantityToAdd: "",
-            sourceLocationId: null as string | null,
-        },
-        validate: {
-             quantityToAdd: (value) => {
-                const num = parseFloat(value);
-                return !isNaN(num) && num > 0 ? null : "Quantidade inválida (> 0)";
-            },
-            sourceLocationId: (val) => (val ? null : "Localização de origem é obrigatória"),
-        },
-    });
+  const form = useForm({
+    initialValues: {
+      quantityToAdd: '',
+      sourceLocationId: '',
+    },
+    validate: {
+      quantityToAdd: (value) => (value ? null : 'Quantidade é obrigatória'),
+      sourceLocationId: (value) => (value ? null : 'Local de origem é obrigatório'),
+    },
+  });
 
-    // Reset form when modal opens or pan changes
-    useEffect(() => {
-        if (opened && pan) {
-            // Optionally pre-fill quantity needed?
-            // const needed = parseFloat(pan.capacity) - parseFloat(pan.currentQuantity);
-            // form.setFieldValue('quantityToAdd', needed > 0 ? needed.toFixed(3) : "");
-            form.reset(); // Or just reset
-        } else if (!opened) {
-             form.reset();
+  // Fetch storage locations on mount
+  useEffect(() => {
+    async function fetchLocations() {
+      try {
+        const res = await fetch('/api/storage-locations');
+        const data: ApiResponse<StorageLocation[]> = await res.json();
+        if (data.success && data.data) {
+          const formatted = data.data.map(loc => ({
+            label: loc.name,
+            value: loc.id,
+          }));
+          setStorageLocations(formatted);
+        } else {
+          setError('Falha ao buscar locais de estoque.');
         }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [opened, pan]);
+      } catch (err) {
+        setError('Erro ao conectar com a API de locais de estoque.');
+      }
+    }
+    fetchLocations();
+  }, []);
 
+  const handleSubmit = async (values: typeof form.values) => {
+    if (!pan) return;
+    setIsLoading(true);
+    setError(null);
 
-    const handleSubmit = async (values: typeof form.values) => {
-         if (!pan) return; // Should not happen
-        setIsSubmitting(true);
-        const payload = {
-            quantityToAdd: values.quantityToAdd, // API expects string or number
-            sourceLocationId: values.sourceLocationId,
-        };
+    try {
+      const res = await fetch(`/api/buffet/${pan.id}/refill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quantityToAdd: values.quantityToAdd,
+          sourceLocationId: values.sourceLocationId,
+        }),
+      });
 
-        try {
-            const response = await fetch(`/api/buffet/pans/${pan.id}/refill`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            const data: ApiResponse = await response.json();
+      const data: ApiResponse = await res.json();
 
-            if (response.ok && data.success) {
-                notifications.show({ title: "Sucesso", message: `Cuba de ${pan.ingredient?.name ?? pan.id} reabastecida!`, color: "green" });
-                onSuccess();
-            } else {
-                notifications.show({ title: "Erro", message: data.error || "Falha ao reabastecer cuba", color: "red" });
-            }
-        } catch (error: any) {
-            notifications.show({ title: "Erro", message: error.message || "Erro inesperado", color: "red" });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+      if (data.success && data.data) {
+        notifications.show({
+          title: 'Sucesso!',
+          message: `Cuba de ${pan.ingredient?.name} reabastecida.`,
+          color: 'green',
+        });
+        onRefillSuccess(data.data); // Pass updated pan back
+        handleClose();
+      } else {
+        setError(data.error || 'Falha ao reabastecer a cuba.');
+      }
+    } catch (err) {
+      setError('Erro de conexão. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    const locationOptions = locations.map(l => ({ value: l.id, label: l.name }));
+  const handleClose = () => {
+    form.reset();
+    setError(null);
+    onClose();
+  };
 
-    if (!pan || !pan.ingredient) return null; // Should have ingredient if modal is opened
+  const maxRefill = pan?.capacity ? (parseFloat(pan.capacity) - parseFloat(pan.currentQuantity)) : undefined;
 
-    const currentQty = parseFloat(pan.currentQuantity);
-    const capacityQty = parseFloat(pan.capacity);
-    const unit = pan.ingredient.unit;
+  return (
+    <Modal opened={opened} onClose={handleClose} title={`Reabastecer ${pan?.ingredient?.name || 'Cuba'}`}>
+      {pan && (
+        <form onSubmit={form.onSubmit(handleSubmit)}>
+          <Text size="sm">
+            Atual: {pan.currentQuantity} / {pan.capacity || 'N/A'} {pan.ingredient?.unit}
+          </Text>
+          {pan.capacity && (
+             <Text size="xs" color="dimmed">
+              (Máx. para adicionar: {maxRefill?.toFixed(3)} {pan.ingredient?.unit})
+            </Text>
+          )}
 
-    return (
-        <Modal opened={opened} onClose={onClose} title={`Reabastecer: ${pan.ingredient.name}`} centered>
-            <LoadingOverlay visible={isSubmitting} />
-             <form onSubmit={form.onSubmit(handleSubmit)}>
-                <Stack>
-                     <Text size="sm">Cuba contém atualmente {currentQty.toFixed(1)}/{capacityQty.toFixed(1)} {unit}.</Text>
-                     <Select
-                        required
-                        label="Origem do Estoque"
-                        placeholder="De onde retirar o ingrediente?"
-                        data={locationOptions}
-                        {...form.getInputProps('sourceLocationId')}
-                        searchable
-                    />
-                    <NumberInput
-                        required
-                        label={`Quantidade a Adicionar (em ${unit})`}
-                        placeholder="Ex: 500"
-                        min={0.001}
-                        decimalScale={3}
-                        step={0.1}
-                        {...form.getInputProps('quantityToAdd')}
-                    />
-                    <Button type="submit" mt="md" loading={isSubmitting}>
-                        Confirmar Reabastecimento
-                    </Button>
-                </Stack>
-            </form>
-        </Modal>
-    );
+          <Select
+            label="Origem do Estoque"
+            placeholder="Selecione o local de origem"
+            data={storageLocations}
+            searchable
+            required
+            mt="md"
+            {...form.getInputProps('sourceLocationId')}
+          />
+
+          <NumberInput
+            label={`Quantidade a Adicionar (${pan.ingredient?.unit})`}
+            placeholder="Ex: 5.5"
+            // --- START FIX: Changed 'precision' to 'decimalScale' ---
+            decimalScale={3}
+            // --- END FIX ---
+            min={0}
+            max={maxRefill}
+            required
+            mt="md"
+            {...form.getInputProps('quantityToAdd')}
+          />
+
+          {error && (
+            <Alert color="red" title="Erro" mt="md" withCloseButton onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+
+          <Group position="right" mt="xl">
+            <Button variant="default" onClick={handleClose} loading={isLoading}>
+              Cancelar
+            </Button>
+            <Button type="submit" loading={isLoading}>
+              Confirmar Reabastecimento
+            </Button>
+          </Group>
+        </form>
+      )}
+    </Modal>
+  );
 }

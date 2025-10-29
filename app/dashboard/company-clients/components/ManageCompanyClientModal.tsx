@@ -1,151 +1,182 @@
 // PATH: app/dashboard/company-clients/components/ManageCompanyClientModal.tsx
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import {
-  Modal,
-  TextInput,
-  Button,
-  Stack,
-  LoadingOverlay,
-  NumberInput,
-  Select,
-  Textarea,
-  Group
-} from "@mantine/core";
-import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
-import { CompanyClient, SalesPipelineStage } from "@prisma/client"; // Use Prisma type for editing
-import { SerializedCompanyClientWithId } from "./CompanyClientTable"; // Import serialized type for editing
+import { useState, useEffect } from 'react';
+import { Modal, Button, TextInput, NumberInput, Select, Textarea, Group, Alert } from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
+import { ApiResponse } from '@/lib/types';
+import { SerializedCompanyClientWithId } from '../page'; // Assuming correct import path
 
 interface ManageCompanyClientModalProps {
   opened: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => void; // Function to handle form submission (POST or PATCH)
-  clientToEdit: SerializedCompanyClientWithId | null; // Pass client data for editing
-  isLoading: boolean; // Loading state from parent mutation
+  onSuccess: () => void;
+  client?: SerializedCompanyClientWithId | null; // Optional client for editing
 }
 
-// Data for SalesPipelineStage select
-const salesStageOptions = Object.values(SalesPipelineStage).map(stage => ({
-    value: stage,
-    label: stage.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) // Basic formatting
-}));
+// Define valid sales stages if you want stricter validation (optional)
+const salesStages = ["Prospect", "Lead", "Negotiation", "Active", "Lost", "Inactive"];
 
-export function ManageCompanyClientModal({
-  opened,
-  onClose,
-  onSubmit,
-  clientToEdit,
-  isLoading,
-}: ManageCompanyClientModalProps) {
+export function ManageCompanyClientModal({ opened, onClose, onSuccess, client }: ManageCompanyClientModalProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isEditing = !!client;
 
   const form = useForm({
     initialValues: {
-      companyName: "",
-      phone: "",
-      contactPerson: "",
-      email: "",
-      addressStreet: "",
-      addressCity: "",
-      addressState: "",
-      addressZip: "",
-      employeeCount: '' as number | '',
-      consumptionFactor: '1.0', // Default as string
-      salesPipelineStage: SalesPipelineStage.LEAD,
-      notes: "",
+      companyName: '',
+      contactName: '',
+      contactPhone: '',
+      contactEmail: '',
+      cnpj: '',
+      addressStreet: '',
+      addressNumber: '',
+      addressComplement: '',
+      addressDistrict: '',
+      addressCity: '',
+      addressState: '',
+      addressZipCode: '',
+      employeeCount: null as number | null, // Use number for Mantine NumberInput
+      consumptionFactor: 1.0, // Use number for Mantine NumberInput
+      salesPipelineStage: 'Lead',
+      notes: '',
     },
     validate: {
-      companyName: (value) => value.trim().length < 2 ? "Nome da empresa é obrigatório" : null,
-      phone: (value) => /^\d{10,15}$/.test(value.replace(/\D/g, '')) ? null : "Telefone inválido (10-15 dígitos)", // Allow more digits/formats
-      email: (value) => !value || /^\S+@\S+\.\S+$/.test(value) ? null : "Email inválido",
-      employeeCount: (value) => (value !== '' && (isNaN(Number(value)) || Number(value) < 0)) ? "Número inválido" : null,
-      consumptionFactor: (value) => {
-          try {
-              const num = parseFloat(value);
-              return !isNaN(num) && num >= 0 ? null : "Fator inválido (>= 0)";
-          } catch { return "Formato inválido"; }
-      },
+      companyName: (value) => (value.trim() ? null : 'Nome da Empresa é obrigatório'),
+      contactPhone: (value) => (value.trim() ? null : 'Telefone de Contato é obrigatório'),
+      contactEmail: (value) => (/^\S+@\S+$/.test(value) || !value ? null : 'Email inválido'),
+      consumptionFactor: (value) => (value !== null && value >= 0 ? null : 'Fator deve ser >= 0'),
+      employeeCount: (value) => (value === null || value >= 0 ? null : 'Número de funcionários deve ser >= 0'),
     },
   });
 
-  // Populate form when editing
   useEffect(() => {
-    if (clientToEdit && opened) {
+    if (client) {
       form.setValues({
-        companyName: clientToEdit.companyName,
-        phone: clientToEdit.phone,
-        contactPerson: clientToEdit.contactPerson || "",
-        email: clientToEdit.email || "",
-        addressStreet: clientToEdit.addressStreet || "",
-        addressCity: clientToEdit.addressCity || "",
-        addressState: clientToEdit.addressState || "",
-        addressZip: clientToEdit.addressZip || "",
-        employeeCount: clientToEdit.employeeCount ?? '', // Use empty string for null
-        consumptionFactor: clientToEdit.consumptionFactor, // Already a string
-        salesPipelineStage: clientToEdit.salesPipelineStage,
-        notes: clientToEdit.notes || "",
+        companyName: client.companyName || '',
+        contactName: client.contactName || '',
+        contactPhone: client.contactPhone || '',
+        contactEmail: client.contactEmail || '',
+        cnpj: client.cnpj || '',
+        addressStreet: client.addressStreet || '',
+        addressNumber: client.addressNumber || '',
+        addressComplement: client.addressComplement || '',
+        addressDistrict: client.addressDistrict || '',
+        addressCity: client.addressCity || '',
+        addressState: client.addressState || '',
+        addressZipCode: client.addressZipCode || '',
+        employeeCount: client.employeeCount ?? null,
+        // --- START FIX: Parse consumptionFactor string back to number ---
+        consumptionFactor: client.consumptionFactor ? parseFloat(client.consumptionFactor) : 1.0,
+        // --- END FIX ---
+        salesPipelineStage: client.salesPipelineStage || 'Lead',
+        notes: client.notes || '',
       });
-    } else if (!opened) {
-      form.reset(); // Reset form when modal closes
+    } else {
+      form.reset();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientToEdit, opened]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
 
-  const handleFormSubmit = (values: typeof form.values) => {
-    // Convert necessary fields before submitting
-    const payload = {
-        ...values,
-        employeeCount: values.employeeCount !== '' ? Number(values.employeeCount) : null,
-        // consumptionFactor is already string
-    };
-    onSubmit(payload);
-  };
+  const handleSubmit = async (values: typeof form.values) => {
+    setIsLoading(true);
+    setError(null);
+    const apiUrl = isEditing ? `/api/company-clients/${client?.id}` : '/api/company-clients';
+    const method = isEditing ? 'PATCH' : 'POST';
 
-  const handleClose = () => {
-    // form.reset(); // Resetting in useEffect on close
-    onClose();
+    try {
+      const res = await fetch(apiUrl, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+           ...values,
+           // --- START FIX (ts(2367)): Adjusted check for employeeCount ---
+           // If employeeCount is null, undefined, 0, or '', send null. Otherwise, send the number.
+           // This avoids the direct comparison between number and string ('').
+           employeeCount: !values.employeeCount ? null : Number(values.employeeCount),
+           // --- END FIX ---
+           consumptionFactor: Number(values.consumptionFactor),
+        }),
+      });
+
+      const data: ApiResponse = await res.json();
+
+      if (data.success) {
+        notifications.show({
+          title: 'Sucesso!',
+          message: `Cliente ${isEditing ? 'atualizado' : 'criado'} com sucesso.`,
+          color: 'green',
+        });
+        onSuccess();
+        handleCloseModal();
+      } else {
+        setError(data.error || `Falha ao ${isEditing ? 'atualizar' : 'criar'} cliente.`);
+      }
+    } catch (err) {
+      setError('Erro de conexão. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <Modal
-        opened={opened}
-        onClose={handleClose}
-        title={clientToEdit ? "Editar Cliente B2B" : "Novo Cliente B2B"}
-        size="lg"
+      opened={opened}
+      onClose={handleClose}
+      title={isEditing ? 'Editar Cliente Corporativo' : 'Criar Cliente Corporativo'}
+      size="lg"
     >
-      <LoadingOverlay visible={isLoading} />
-      <form onSubmit={form.onSubmit(handleFormSubmit)}>
-        <Stack>
-          <TextInput required label="Nome da Empresa" {...form.getInputProps("companyName")} />
-          <TextInput required label="Telefone Principal" placeholder="(XX) XXXXX-XXXX" {...form.getInputProps("phone")} />
-          <TextInput label="Pessoa de Contato" {...form.getInputProps("contactPerson")} />
-          <TextInput label="Email Contato" type="email" {...form.getInputProps("email")} />
+      <form onSubmit={form.onSubmit(handleSubmit)}>
+        {error && (
+          <Alert color="red" title="Erro" mt="md" withCloseButton onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
 
-          <Group grow>
-            <NumberInput label="Nº Funcionários" placeholder="100" min={0} allowDecimal={false} {...form.getInputProps("employeeCount")} />
-            <NumberInput label="Fator Consumo" description="Ex: 1.2 (come 20% a mais)" placeholder="1.0" min={0} step={0.1} decimalScale={2} {...form.getInputProps("consumptionFactor")} />
-          </Group>
+        <TextInput label="Nome da Empresa" required {...form.getInputProps('companyName')} />
+        <TextInput label="Nome do Contato" mt="sm" {...form.getInputProps('contactName')} />
+        <TextInput label="Telefone de Contato" required mt="sm" {...form.getInputProps('contactPhone')} />
+        <TextInput label="Email de Contato" type="email" mt="sm" {...form.getInputProps('contactEmail')} />
+        <TextInput label="CNPJ" mt="sm" {...form.getInputProps('cnpj')} />
 
-          <Select
-            label="Estágio da Venda"
-            data={salesStageOptions}
-            {...form.getInputProps("salesPipelineStage")}
-          />
+        <Group grow mt="sm">
+          <TextInput label="Rua" {...form.getInputProps('addressStreet')} />
+          <TextInput label="Número" {...form.getInputProps('addressNumber')} />
+        </Group>
+         <Group grow mt="sm">
+            <TextInput label="Complemento" {...form.getInputProps('addressComplement')} />
+            <TextInput label="Bairro" {...form.getInputProps('addressDistrict')} />
+         </Group>
+         <Group grow mt="sm">
+            <TextInput label="Cidade" {...form.getInputProps('addressCity')} />
+            <TextInput label="Estado (UF)" maxLength={2} {...form.getInputProps('addressState')} />
+            <TextInput label="CEP" {...form.getInputProps('addressZipCode')} />
+         </Group>
 
-          <TextInput label="Endereço (Rua, Nº)" {...form.getInputProps("addressStreet")} />
-          <Group grow>
-            <TextInput label="Cidade" {...form.getInputProps("addressCity")} />
-            <TextInput label="Estado (UF)" maxLength={2} {...form.getInputProps("addressState")} />
-            <TextInput label="CEP" placeholder="XXXXX-XXX" {...form.getInputProps("addressZip")} />
-          </Group>
+        <Group grow mt="sm">
+           <NumberInput label="Nº Funcionários" min={0} step={1} {...form.getInputProps('employeeCount')} />
+           <NumberInput label="Fator Consumo" min={0} step={0.1} decimalScale={2} {...form.getInputProps('consumptionFactor')} />
+        </Group>
 
-          <Textarea label="Notas Internas" placeholder="Detalhes, preferências..." {...form.getInputProps("notes")} />
+        <Select
+          label="Estágio da Venda"
+          data={salesStages}
+          mt="sm"
+          {...form.getInputProps('salesPipelineStage')}
+        />
 
-          <Button type="submit" mt="md" loading={isLoading}>
-            {clientToEdit ? "Salvar Alterações" : "Criar Cliente"}
+        <Textarea label="Observações" mt="sm" {...form.getInputProps('notes')} />
+
+
+        <Group justify="right" mt="xl">
+          <Button variant="default" onClick={handleClose} loading={isLoading}>
+            Cancelar
           </Button>
-        </Stack>
+          <Button type="submit" loading={isLoading}>
+            {isEditing ? 'Salvar Alterações' : 'Criar Cliente'}
+          </Button>
+        </Group>
       </form>
     </Modal>
   );

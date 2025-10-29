@@ -1,137 +1,117 @@
 // PATH: app/dashboard/clients/[id]/components/AddCreditModal.tsx
-// NOTE: This is a NEW FILE.
+'use client';
 
-"use client";
-
-import { useState } from "react";
-import {
-  Modal,
-  Button,
-  NumberInput,
-  Stack,
-  LoadingOverlay,
-  Text,
-  Select,
-} from "@mantine/core";
-import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
-import { ApiResponse } from "@/lib/types";
-import { TransactionStatus, TransactionType } from "@prisma/client";
-import { formatCurrency } from "@/lib/utils"; // Import the function
+import { useState } from 'react';
+import { Modal, Button, NumberInput, TextInput, Alert } from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
+import { ApiResponse } from '@/lib/types';
+// --- START FIX: Import correct Enum value ---
+import { TransactionType, TransactionStatus } from '@prisma/client';
+// --- END FIX ---
 
 interface AddCreditModalProps {
   opened: boolean;
   onClose: () => void;
-  onSuccess: () => void;
   clientId: string;
-  clientName: string;
+  onSuccess: (updatedTransaction: any) => void; // Callback to update UI
 }
 
-export function AddCreditModal({
-  opened,
-  onClose,
-  onSuccess,
-  clientId,
-  clientName,
-}: AddCreditModalProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+export function AddCreditModal({ opened, onClose, clientId, onSuccess }: AddCreditModalProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const form = useForm({
     initialValues: {
-      amount: 0,
-      status: TransactionStatus.COMPLETED, // Default to completed for staff
+      amount: '',
+      proofOfPay: '',
     },
     validate: {
-      amount: (value) =>
-        value <= 0 ? "Valor deve ser maior que zero" : null,
+      amount: (value) => {
+        if (!value) return 'Valor é obrigatório';
+        try {
+          const num = parseFloat(value);
+          if (isNaN(num) || num <= 0) return 'Valor deve ser positivo';
+        } catch {
+          return 'Formato inválido';
+        }
+        return null;
+      },
     },
   });
 
   const handleSubmit = async (values: typeof form.values) => {
-    setIsSubmitting(true);
+    setIsLoading(true);
+    setError(null);
+
     try {
-      const response = await fetch("/api/wallet-transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/wallet-transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clientId: clientId,
-          amount: values.amount.toString(),
-          type: TransactionType.TOP_UP,
-          status: values.status,
-          proofOfPay: "Adicionado manualmente pela equipe",
+          clientId,
+          amount: values.amount,
+          // --- START FIX: Use correct Enum value ---
+          type: TransactionType.DEPOSIT, // Use DEPOSIT instead of TOP_UP
+          // --- END FIX ---
+          status: TransactionStatus.COMPLETED, // Assume staff-added credit is completed
+          proofOfPay: values.proofOfPay || null,
         }),
       });
 
       const data: ApiResponse = await response.json();
 
-      if (response.ok && data.success) {
+      if (data.success && data.data) {
         notifications.show({
-          title: "Sucesso!",
-          message: `Crédito de ${formatCurrency( // Now works correctly
-            values.amount
-          )} adicionado para ${clientName}.`,
-          color: "green",
+          title: 'Sucesso!',
+          message: `Crédito de R$ ${values.amount} adicionado ao cliente.`,
+          color: 'green',
         });
-        form.reset();
-        onSuccess();
+        onSuccess(data.data); // Pass the new transaction back
+        handleClose(); // Close modal on success
       } else {
-        notifications.show({
-          title: "Erro",
-          message: data.error || "Falha ao adicionar crédito",
-          color: "red",
-        });
+        setError(data.error || 'Falha ao adicionar crédito.');
       }
-    } catch (error) {
-      console.error("Submit error:", error);
-      notifications.show({
-        title: "Erro",
-        message: "Ocorreu um erro inesperado",
-        color: "red",
-      });
+    } catch (err) {
+      setError('Erro de conexão ao servidor.');
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
   const handleClose = () => {
-    form.reset();
-    onClose();
+    form.reset(); // Clear form
+    setError(null); // Clear errors
+    onClose(); // Call the parent close handler
   };
 
   return (
-    <Modal
-      opened={opened}
-      onClose={handleClose}
-      title={`Adicionar Crédito para ${clientName}`}
-    >
-      <LoadingOverlay visible={isSubmitting} />
+    <Modal opened={opened} onClose={handleClose} title="Adicionar Crédito">
       <form onSubmit={form.onSubmit(handleSubmit)}>
-        <Stack>
-          <NumberInput
-            required
-            label="Valor a Adicionar (R$)"
-            placeholder="50.00"
-            decimalScale={2}
-            fixedDecimalScale
-            min={0.01}
-            {...form.getInputProps("amount")}
-          />
-          <Select
-            label="Status da Transação"
-            data={[
-              { value: TransactionStatus.COMPLETED, label: "Completa (Adicionar Saldo Agora)" },
-              { value: TransactionStatus.PENDING, label: "Pendente (Aguardar Aprovação)" },
-            ]}
-            {...form.getInputProps("status")}
-          />
-          <Text size="xs" c="dimmed">
-            Se "Completa", o saldo será atualizado imediatamente. Se "Pendente",
-            irá para a fila de aprovação.
-          </Text>
-          <Button type="submit" mt="md">
-            Confirmar
-          </Button>
-        </Stack>
+        <NumberInput
+          label="Valor a Adicionar (R$)"
+          placeholder="Ex: 50.00"
+          required
+          decimalScale={2}
+          fixedDecimalScale
+          {...form.getInputProps('amount')}
+        />
+        <TextInput
+          label="Comprovante (Opcional)"
+          placeholder="Ex: PIX ID, Depósito #123"
+          mt="md"
+          {...form.getInputProps('proofOfPay')}
+        />
+
+        {error && (
+          <Alert color="red" title="Erro" mt="md" withCloseButton onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+
+        <Button type="submit" mt="xl" loading={isLoading} fullWidth>
+          Confirmar Crédito
+        </Button>
       </form>
     </Modal>
   );

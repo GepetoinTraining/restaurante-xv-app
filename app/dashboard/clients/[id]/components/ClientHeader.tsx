@@ -78,7 +78,6 @@ export function ClientHeader({ client, onRefresh }: ClientHeaderProps) {
           onRefresh(); // Refresh client data to show new balance
         }}
         clientId={client.id}
-        clientName={client.name}
       />
     </>
   );
