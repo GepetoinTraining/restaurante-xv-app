@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { Stack, Tabs, Paper, Text, Center } from '@mantine/core';
-import { DatePicker } from '@mantine/dates':
+import { DatePicker } from '@mantine/dates';
 import { IconCalendar } from '@tabler/icons-react';
 
 // For internationalization (pt-BR)
