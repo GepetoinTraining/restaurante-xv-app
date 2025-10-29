@@ -1,5 +1,5 @@
 // PATH: app/dashboard/financials/page.tsx
-
+'use client';
 import { Container, Stack } from '@mantine/core';
 import { PageHeader } from '../components/PageHeader';
 import { PurchaseOrderReceiving } from './components/PurchaseOrderReceiving';
