@@ -34,7 +34,10 @@ import {
 } from '@dnd-kit/core';
 import { notifications } from '@mantine/notifications';
 import { CompanyClient } from '@prisma/client';
+import { useDisclosure } from '@mantine/hooks';
 // -------------------
+
+
 
 // Define the order and title of columns
 const pipelineStagesV2 = [
@@ -176,13 +179,6 @@ export function SalesPipelineBoard() {
             minHeight: '60vh', // Ensure columns have height
           }}
         >
-          <Button
-          leftSection={<IconPlus size={14} />}
-          onClick={handleOpenCreateModal}
-          w={200}
-        >
-          Novo Cliente B2B
-        </Button>
           {pipelineStagesV2.map((stage) => (
             <SalesPipelineColumn
               key={stage.id}
