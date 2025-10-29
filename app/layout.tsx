@@ -6,7 +6,6 @@ import "./globals.css";
 import React from "react";
 import { ColorSchemeScript } from "@mantine/core";
 import { AppMantineProvider } from "./components/MantineProvider";
-import { Notifications } from "@mantine/notifications"; // Import Notifications
 
 export const metadata = {
   title: "Restaurante Espaço XV",
@@ -36,7 +35,6 @@ export default function RootLayout({
       </head>
       <body>
         <AppMantineProvider>
-          <Notifications position="top-right" />
           {children}
         </AppMantineProvider>
       </body>
