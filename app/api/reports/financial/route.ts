@@ -1,11 +1,13 @@
 // PATH: app/api/reports/financial/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FinancialReport } from "@/lib/types"; // It imports the correct type
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
+  // --- FIX: Call getSession() ---
+  const session = await getSession();
+  // --- END FIX ---
   if (session?.user?.role !== "OWNER" && session?.user?.role !== "MANAGER") {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
