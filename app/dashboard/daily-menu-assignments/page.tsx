@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient
 import { CompanyClient, Menu } from "@prisma/client";
 import { StandardCalendar } from "../../../components/ui/StandardCalendar";
 import { DailyAssignmentManager } from "./components/DailyAssignmentManager";
+import dayjs from 'dayjs'; // <--- ADD THIS LINE
 
 // Create a client for react-query
 const queryClient = new QueryClient();
