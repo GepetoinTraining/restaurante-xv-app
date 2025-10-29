@@ -86,7 +86,7 @@ async function main() {
 
   // 2. --- Seed Users ---
   console.log('Seeding users...');
-  const hashedPin = await bcrypt.hash('1234', SALT_ROUNDS);
+  const hashedPin = await bcrypt.hash('123456', SALT_ROUNDS);
   const owner = await prisma.user.create({
     data: {
       name: 'Owner User',

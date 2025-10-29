@@ -1,10 +1,14 @@
-// PATH: app/api/reports/costs/route.ts
+// File: app/api/reports/costs/route.ts
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { toUTC } from '@/lib/utils';
 import { Decimal } from '@prisma/client/runtime/library';
 import { POStatus, WasteReason } from '@prisma/client';
+
+// --- FIX: Add this line to force dynamic rendering ---
+export const dynamic = 'force-dynamic';
+// ---------------------------------------------------
 
 /**
  * GET /api/reports/costs
