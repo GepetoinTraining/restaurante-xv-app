@@ -6,7 +6,7 @@ import { Button, Container, Stack, Group } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 // Import Ingredient type directly from Prisma client as it only holds definition
 import { Ingredient } from "@prisma/client";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { IngredientTable } from "./components/IngredientTable"; // Updated path
 import { CreateIngredientModal } from "./components/CreateIngredientModal"; // Updated path
 import { ApiResponse } from "@/lib/types";

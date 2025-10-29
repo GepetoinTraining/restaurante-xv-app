@@ -2,7 +2,7 @@
 "use client"; // This page will contain client components
 
 import { Container, Stack, Title, Text } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { InvoiceImportSimulation } from "./components/InvoiceImportSimulation"; // Import the simulation component
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 

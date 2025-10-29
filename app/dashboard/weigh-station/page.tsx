@@ -1,7 +1,7 @@
 // PATH: app/dashboard/weigh-station/page.tsx
 'use client'; // <-- Ensure this is at the top
 
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { PageHeader } from "@/app/dashboard/components/PageHeader2";
 import { ApiResponse } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { Alert, Button, Grid, Group, LoadingOverlay, NumberInput, Paper, Stack, Table, Text, TextInput, Title } from "@mantine/core";

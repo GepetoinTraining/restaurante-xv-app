@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { Button, Container, Stack } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import { Product, Workstation } from "@prisma/client"; // Import Prisma types
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ProductTable } from "./components/ProductTable";
 import { CreateProductModal } from "./components/CreateProductModal";
 import { ApiResponse } from "@/lib/types";

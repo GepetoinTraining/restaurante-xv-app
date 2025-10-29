@@ -2,7 +2,7 @@
 "use client";
 
 import { Container, Stack, Title, Text, Loader, Alert } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ApiResponse, StorageLocation, SerializedIngredientDef } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";

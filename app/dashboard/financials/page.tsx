@@ -4,7 +4,7 @@
 'use client';
 
 import { Container, Stack } from '@mantine/core';
-import { PageHeader } from '../components/PageHeader';
+import { PageHeader } from '../components/PageHeader2';
 import { PurchaseOrderReceiving } from './components/PurchaseOrderReceiving';
 import { FinancialReportDisplay } from './components/FinancialReportDisplay';
 

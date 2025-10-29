@@ -1,7 +1,7 @@
 // PATH: app/dashboard/my-tasks/page.tsx
 'use client';
 
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { PageHeader } from "@/app/dashboard/components/PageHeader2";
 import { ApiResponse, SerializedPrepTask, UserWithWorkstation } from "@/lib/types";
 import { Alert, Grid, LoadingOverlay, SegmentedControl, Text } from "@mantine/core";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

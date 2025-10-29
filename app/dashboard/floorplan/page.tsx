@@ -2,7 +2,7 @@
 // NOTE: This is a NEW FILE in a NEW FOLDER.
 
 import { Container, Stack } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { FloorPlanManager } from "./components/FloorPlanManager"; // Main client component
 
 export default function FloorPlanPage() {

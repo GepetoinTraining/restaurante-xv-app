@@ -2,7 +2,6 @@
 import "@mantine/core/styles.css";
 // Ensure globals.css (which now includes font import) is imported AFTER mantine styles
 import "./globals.css";
-
 import React from "react";
 import { ColorSchemeScript } from "@mantine/core";
 import { AppMantineProvider } from "./components/MantineProvider";

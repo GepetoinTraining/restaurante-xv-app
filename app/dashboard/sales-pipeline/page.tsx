@@ -4,7 +4,7 @@
 'use client';
 
 import { Container, Stack } from '@mantine/core';
-import { PageHeader } from '../components/PageHeader';
+import { PageHeader } from '../components/PageHeader2';
 import { SalesPipelineBoard } from './components/SalesPipelineBoard';
 
 // --- FIX: Import QueryClient ---

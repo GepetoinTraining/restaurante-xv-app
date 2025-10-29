@@ -9,7 +9,7 @@ import {
   Title,
   Text,
 } from "@mantine/core";
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { PageHeader } from "@/app/dashboard/components/PageHeader2";
 import { useState, useEffect } from "react";
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";

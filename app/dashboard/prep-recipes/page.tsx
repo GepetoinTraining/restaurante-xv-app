@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Button, Container, Stack, Group, Text, Alert } from "@mantine/core";
 import { IconPlus, IconAlertCircle } from "@tabler/icons-react";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ApiResponse, SerializedIngredientDef, SerializedPrepRecipe } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";

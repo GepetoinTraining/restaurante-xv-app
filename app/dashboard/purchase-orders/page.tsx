@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Button, Container, Stack, Alert } from "@mantine/core";
 import { IconPlus, IconAlertCircle } from "@tabler/icons-react";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ApiResponse, SerializedIngredientDef } from "@/lib/types"; // Import Ingredient type for modal
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";

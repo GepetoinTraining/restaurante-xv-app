@@ -1,7 +1,7 @@
 // PATH: app/dashboard/buffet-status/page.tsx
 'use client';
 
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ApiResponse, StorageLocation } from "@/lib/types";
 import { Alert, Button, Grid, Group, LoadingOverlay, Title } from "@mantine/core";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";

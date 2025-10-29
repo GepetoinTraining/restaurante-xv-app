@@ -2,7 +2,7 @@
 "use client";
 
 import { Button, Stack, Tabs, Title, Loader, Text, Center, SegmentedControl } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { Box, Package, Plus, MapPin } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useMemo } from "react"; // Removed useEffect as it's not used directly here

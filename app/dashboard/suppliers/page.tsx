@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import axios, { AxiosError } from "axios";
 import { Supplier } from "@prisma/client";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { SupplierTable } from "./components/SupplierTable";
 import { ManageSupplierModal } from "./components/ManageSupplierModal";
 import { Button, Alert, LoadingOverlay, Box, Text } from "@mantine/core";

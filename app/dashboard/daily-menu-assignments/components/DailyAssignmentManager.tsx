@@ -12,10 +12,9 @@ import {
   Button,
   Loader,
   ScrollArea,
-  ActionIcon,
   Tooltip
 } from "@mantine/core";
-import { IconToolsKitchen2, IconRefresh } from "@tabler/icons-react";
+import { IconToolsKitchen2 } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { SerializedDailyAssignment } from "../page"; // Import types from page
 

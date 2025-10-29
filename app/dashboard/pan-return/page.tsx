@@ -4,7 +4,7 @@
 'use client';
 
 import { Container, Stack } from '@mantine/core';
-import { PageHeader } from '../components/PageHeader';
+import { PageHeader } from '../components/PageHeader2';
 import { PanReturnInterface } from './components/PanReturnInterface';
 import { DailyConsumptionTrigger } from './components/DailyConsumptionTrigger';
 

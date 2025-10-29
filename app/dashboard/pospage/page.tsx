@@ -2,7 +2,7 @@
 'use client';
 
 import { Container, Title, Text, Paper } from '@mantine/core';
-import { PageHeader } from '../components/PageHeader'; // Assuming PageHeader exists
+import { PageHeader } from '../components/PageHeader2'; // Assuming PageHeader exists
 
 // Basic placeholder component for the POS page
 export default function PosPage() {

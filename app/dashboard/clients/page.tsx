@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { Button, Container, Stack } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import { Client } from "@prisma/client";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ClientTable } from "./components/ClientTable";
 import { CreateClientModal } from "./components/CreateClientModal"; // This component is fine as-is
 import { ApiResponse } from "@/lib/types";

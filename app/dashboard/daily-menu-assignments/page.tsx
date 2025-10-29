@@ -4,14 +4,12 @@
 import { useState } from "react";
 import { Container, Stack, Alert, Group, LoadingOverlay, Text } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CompanyClient, Menu } from "@prisma/client";
 import { StandardCalendar } from "../../../components/ui/StandardCalendar";
-import 'dayjs/locale/pt-br';
-import dayjs from "dayjs";
 import { DailyAssignmentManager } from "./components/DailyAssignmentManager";
 
 // Create a client for react-query

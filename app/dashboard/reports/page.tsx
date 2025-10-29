@@ -1,7 +1,7 @@
 // PATH: app/dashboard/reports/page.tsx
 'use client';
 
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { PageHeader } from "@/app/dashboard/components/PageHeader2";
 import {
   Alert,
   Box,

@@ -1,7 +1,7 @@
 // PATH: app/dashboard/prep-management/page.tsx
 'use client';
 
-import { PageHeader } from "@/app/dashboard/components/PageHeader";
+import { PageHeader } from "@/app/dashboard/components/PageHeader2";
 import { ApiResponse, SerializedPrepTask, StorageLocation, UserWithWorkstation, SerializedPrepRecipe } from "@/lib/types"; // Added SerializedPrepRecipe
 import { Alert, Grid, LoadingOverlay, SegmentedControl, Text, Group, Box, Title, Badge, Button } from "@mantine/core";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

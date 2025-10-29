@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { Button, Container, Title, Stack } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import { User, Workstation } from "@prisma/client"; // Import the new User type
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import { StaffTable } from "./components/StaffTable"; // This component will also be refactored
 import { CreateStaffModal } from "./components/CreateStaffModal"; // This component will also be refactored
 import { ApiResponse } from "@/lib/types";

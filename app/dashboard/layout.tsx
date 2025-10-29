@@ -5,7 +5,6 @@ import { AppShell, Burger, Group, Skeleton, Image, ActionIcon, useMantineColorSc
 import { useDisclosure } from '@mantine/hooks';
 import { ModalsProvider } from '@mantine/modals';
 import { MainNav } from "./components/MainNav";
-import { Notifications } from "@mantine/notifications";
 import { ReactNode } from "react";
 import { IconSun, IconMoon, IconUserCircle } from "@tabler/icons-react"; // Added IconUserCircle
 import Link from "next/link"; // Added Link for navigation
